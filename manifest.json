@@ -1,0 +1,27 @@
+{
+  "name": "Abu Basel Al Shahm",
+  "short_name": "Abu Basel",
+  "description": "تطبيق حسابات الزباين والوحدات",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#121A1E",
+  "theme_color": "#121A1E",
+  "dir": "rtl",
+  "lang": "ar",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
