@@ -807,6 +807,7 @@
     html += '      <input type="file" id="importFileInput" accept="application/json" style="display:none">';
     html += '    </div>';
     html += '    <div class="sheet-actions"><button class="btn btn-ghost" id="closeSettings">إغلاق</button></div>';
+    html += '    <div class="sheet-actions" style="margin-top:6px;"><button class="btn btn-ghost" id="logoutBtn">تسجيل خروج</button></div>';
     html += '  </div>';
     html += '</div>';
     return html;
@@ -1029,6 +1030,12 @@
     var closeSettings = document.getElementById('closeSettings');
     if(closeSettings) closeSettings.addEventListener('click', function(){ state.modal=null; render(); });
 
+    var logoutBtn = document.getElementById('logoutBtn');
+    if(logoutBtn) logoutBtn.addEventListener('click', function(){
+      localStorage.removeItem(REMEMBER_KEY);
+      firebase.auth().signOut();
+    });
+
     var saveCustomer = document.getElementById('saveCustomer');
     if(saveCustomer) saveCustomer.addEventListener('click', function(){
       var nameEl = document.getElementById('custName');
@@ -1103,8 +1110,9 @@
     if(confirmNo) confirmNo.addEventListener('click', function(){ state.confirm = null; render(); });
   }
 
-  // ---------- المصادقة (كلمة السر + تذكر لمدة 24 ساعة) ----------
-  var APP_PASSWORD = "7"; // <-- غيّري هاد النص لكلمة السر يلي بدك ياها
+  // ---------- المصادقة (كلمة سر حقيقية عبر Firebase Auth + تذكّر لمدة 24 ساعة) ----------
+  // *** غيّري هاد الإيميل ليطابق بالضبط الإيميل يلي عملتيه بـ Firebase Console > Authentication > Users ***
+  var APP_LOGIN_EMAIL = "basel@shahm-app.local";
   var REMEMBER_KEY = 'auth-remember-until';
   var REMEMBER_MS = 24 * 60 * 60 * 1000; // 24 ساعة. غيّري الرقم إذا بدك مدة تانية (مثلاً 7 * 24 * 60 * 60 * 1000 لأسبوع)
 
@@ -1115,17 +1123,13 @@
 
   function tryLogin(){
     var val = document.getElementById('passInput').value;
-    if(val !== APP_PASSWORD){
-      document.getElementById('passError').style.display='block';
-      return;
-    }
-    document.getElementById('passError').style.display='none';
-    firebase.auth().signInAnonymously().then(function(){
+    document.getElementById('passError').style.display = 'none';
+    firebase.auth().signInWithEmailAndPassword(APP_LOGIN_EMAIL, val).then(function(){
       localStorage.setItem(REMEMBER_KEY, String(Date.now() + REMEMBER_MS));
     }).catch(function(e){
       console.error(e);
-      document.getElementById('passError').textContent = 'صار خطأ بالدخول، جربي مرة تانية';
-      document.getElementById('passError').style.display='block';
+      document.getElementById('passError').textContent = 'كلمة السر غلط';
+      document.getElementById('passError').style.display = 'block';
     });
   }
 
