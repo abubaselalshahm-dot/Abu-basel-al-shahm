@@ -57,6 +57,12 @@
     transition:background .15s;
   }
   .icon-btn:hover{background:#28343A;}
+  .currency-toggle{
+    background:var(--surface-2); border:1px solid var(--border); color:var(--accent);
+    border-radius:8px; padding:5px 10px; font-size:12px; font-weight:700; cursor:pointer;
+    font-family:inherit;
+  }
+  .currency-toggle:active{transform:scale(0.96);}
   .stat-label{ font-size:13px; color:var(--ink-dim); margin-bottom:6px; }
   .stat-value{
     font-size:34px; font-weight:800; font-family:'Tajawal',sans-serif;
@@ -284,11 +290,25 @@
     loaded: false,
     pendingSync: false,
     onlineCount: 0,
-    installCount: 0
+    installCount: 0,
+    currencyMode: 'old' // old = ل.س (القديمة) | new = ل.س.ج (الجديدة)
   };
+
+  var CURRENCY_RATE = 100; // كم ل.س قديم = ل.س.ج واحد. غيّري الرقم هون لو تغيّر سعر الصرف الرسمي
 
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
   function fmt(n){ n = Math.round(Number(n)||0); return n.toLocaleString('en-US'); }
+  function formatMoney(n){
+    var abs = Math.abs(Number(n)||0);
+    if(state.currencyMode === 'new'){
+      return fmt(abs / CURRENCY_RATE) + ' <span class="unit">ل.س.ج</span>';
+    }
+    return fmt(abs) + ' <span class="unit">ل.س</span>';
+  }
+  function currencyToggleBtn(){
+    var label = state.currencyMode === 'new' ? 'ل.س.ج ⇄' : 'ل.س ⇄';
+    return '<button class="currency-toggle" id="toggleCurrency" title="تحويل بين العملة القديمة والجديدة">'+label+'</button>';
+  }
   function txTotal(t){ return Number(t.baseAmount||0) + Number(t.markup||0); }
 
   var LOCAL_KEY = 'ledger-local-cache-v1';
@@ -563,7 +583,7 @@
   function renderAccountsList(){
     var html = '';
     html += '<div class="header">';
-    html += '  <div class="header-top"><div class="brand">Abu Basel Al Shahm'+syncBadge()+'</div><div class="icon-btn" id="openSettings" title="نسخة احتياطية">⚙</div></div>';
+    html += '  <div class="header-top"><div class="brand">Abu Basel Al Shahm'+syncBadge()+'</div><div style="display:flex;gap:8px;align-items:center;">'+currencyToggleBtn()+'<div class="icon-btn" id="openSettings" title="نسخة احتياطية">⚙</div></div></div>';
     html += statusLine();
     html += '  <div class="stat-label">الحسابات الفرعية</div>';
     html += '  <div class="stat-value" style="font-size:20px; color:var(--ink-dim); font-weight:600;">حسب كل شبكة وفاتورة</div>';
@@ -575,7 +595,7 @@
       var totals = accountTotals(net);
       var netClass = totals.net > 0 ? 'owed' : (totals.net < 0 ? 'clear' : '');
       html += '<div class="account-card" data-open-account="'+net+'">';
-      html += '  <div class="account-card-top"><div class="account-name">'+n.label+'</div><div class="account-total '+netClass+'">'+fmt(Math.abs(totals.net))+'</div></div>';
+      html += '  <div class="account-card-top"><div class="account-name">'+n.label+'</div><div class="account-total '+netClass+'">'+formatMoney(totals.net)+'</div></div>';
       html += '  <div class="account-breakdown"><span>منصرف: <b>'+fmt(totals.out)+'</b></span><span>وارد: <b>'+fmt(totals.inn)+'</b></span></div>';
       html += '</div>';
     });
@@ -595,7 +615,7 @@
     html += '  <div class="back-row"><button class="back-btn" id="backToAccounts">→ الحسابات الفرعية</button></div>';
     html += '  <div class="detail-name">'+n.label+'</div>';
     html += '  <div class="stat-label">صافي الحركة</div>';
-    html += '  <div class="stat-value '+netClass+'" style="font-size:26px;">'+fmt(Math.abs(totals.net))+' <span class="unit">ل.س</span></div>';
+    html += '  <div class="stat-value '+netClass+'" style="font-size:26px;">'+formatMoney(totals.net)+' '+currencyToggleBtn()+'</div>';
     html += '  <div class="account-breakdown" style="margin-top:10px;"><span>منصرف: <b>'+fmt(totals.out)+'</b></span><span>وارد: <b>'+fmt(totals.inn)+'</b></span></div>';
     html += '</div>';
 
@@ -651,7 +671,7 @@
     if(c.syriatelCode) html += '<span class="chip chip-syr">سيريتل '+escapeHtml(c.syriatelCode)+'</span>';
     html += '  </div>';
     html += '  <div class="detail-balance-row">';
-    html += '    <div><div class="stat-label">الرصيد الحالي</div><div class="stat-value '+balClass+'" style="font-size:26px;">'+fmt(Math.abs(bal))+' <span class="unit">ل.س</span></div></div>';
+    html += '    <div><div class="stat-label">الرصيد الحالي</div><div class="stat-value '+balClass+'" style="font-size:26px;">'+formatMoney(bal)+' '+currencyToggleBtn()+'</div></div>';
     html += '    <div class="detail-links"><button class="link-btn" id="editCustomerBtn">تعديل</button><button class="link-btn danger" id="delCustomerBtn">حذف</button></div>';
     html += '  </div>';
     html += '</div>';
@@ -845,6 +865,12 @@
 
     var openSettings = document.getElementById('openSettings');
     if(openSettings) openSettings.addEventListener('click', function(){ state.modal='settings'; render(); });
+
+    var toggleCurrency = document.getElementById('toggleCurrency');
+    if(toggleCurrency) toggleCurrency.addEventListener('click', function(){
+      state.currencyMode = state.currencyMode === 'new' ? 'old' : 'new';
+      render();
+    });
 
     document.querySelectorAll('[data-open]').forEach(function(el){
       el.addEventListener('click', function(){
