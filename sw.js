@@ -1,11 +1,63 @@
-self.addEventListener('install', function(event) {
+// كل ما تعملي تعديل جوهري على index.html، غيّري الرقم هون (مثلاً v3, v4...)
+// عشان يتحدث الكاش عند المستخدمين تلقائياً.
+var CACHE_NAME = 'abu-basel-cache-v2';
+
+var APP_SHELL = [
+  './',
+  './index.html',
+  './manifest.json',
+  './icon-192.png'
+];
+
+self.addEventListener('install', function(event){
   self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(function(cache){
+      return cache.addAll(APP_SHELL);
+    })
+  );
 });
 
-self.addEventListener('activate', function(event) {
-  event.waitUntil(self.clients.claim());
+self.addEventListener('activate', function(event){
+  event.waitUntil(
+    caches.keys().then(function(keys){
+      return Promise.all(keys.filter(function(k){ return k !== CACHE_NAME; }).map(function(k){ return caches.delete(k); }));
+    })
+  );
+  self.clients.claim();
 });
 
-self.addEventListener('fetch', function(event) {
-  event.respondWith(fetch(event.request));
+self.addEventListener('fetch', function(event){
+  if(event.request.method !== 'GET') return;
+
+  // صفحة التطبيق نفسها: جرّب الإنترنت أول (لآخر تحديث)، ولو ما في نت
+  // رجّع النسخة المحفوظة محلياً بدل ما يفشل الفتح كلياً.
+  if(event.request.mode === 'navigate'){
+    event.respondWith(
+      fetch(event.request).then(function(response){
+        var copy = response.clone();
+        caches.open(CACHE_NAME).then(function(cache){ cache.put(event.request, copy); });
+        return response;
+      }).catch(function(){
+        return caches.match('./index.html');
+      })
+    );
+    return;
+  }
+
+  // باقي الملفات (خطوط، سكربتات فايربيز، الأيقونات...):
+  // رجّع النسخة المحفوظة فوراً إذا موجودة (أسرع + بتشتغل أوفلاين)،
+  // وبنفس الوقت حدّثها بالخلفية من الإنترنت لمرة الجاية.
+  event.respondWith(
+    caches.match(event.request).then(function(cached){
+      var fetchPromise = fetch(event.request).then(function(response){
+        if(response && response.status === 200){
+          var copy = response.clone();
+          caches.open(CACHE_NAME).then(function(cache){ cache.put(event.request, copy); });
+        }
+        return response;
+      }).catch(function(){ return cached; });
+      return cached || fetchPromise;
+    })
+  );
 });
