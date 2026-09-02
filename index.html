@@ -387,7 +387,8 @@
     installCount: 0,
     currencyMode: 'old', // old = ل.س (القديمة) | new = ل.س.ج (الجديدة)
     revealedChips: {},
-    calc: { display: '0', prev: null, op: null, waitingNew: false }
+    calc: { display: '0', prev: null, op: null, waitingNew: false },
+    selectedStatementTxIds: []
   };
 
   function ensureDayAssignments(){
@@ -670,6 +671,9 @@
     }
     if(state.modal === 'export-statement'){
       app.insertAdjacentHTML('beforeend', renderExportChoiceSheet());
+    }
+    if(state.modal === 'select-statement-tx'){
+      app.insertAdjacentHTML('beforeend', renderSelectStatementSheet());
     }
     if(state.modal === 'calculator'){
       app.insertAdjacentHTML('beforeend', renderCalculatorSheet());
@@ -1146,12 +1150,45 @@
     return html;
   }
 
+  function renderSelectStatementSheet(){
+    var c = state.customers.find(function(x){ return x.id === state.activeCustomerId; });
+    if(!c) return '';
+    var txs = customerTx(c.id).slice().reverse();
+    var html = '';
+    html += '<div class="overlay" id="overlay">';
+    html += '  <div class="sheet">';
+    html += '    <div class="sheet-title">اختاري العمليات يلي بدك تصدريها</div>';
+    html += '    <div class="sheet-actions" style="margin-bottom:12px;">';
+    html += '      <button class="btn btn-ghost" id="selectAllTx">تحديد الكل</button>';
+    html += '      <button class="btn btn-ghost" id="deselectAllTx">إلغاء التحديد</button>';
+    html += '    </div>';
+    html += '    <div style="max-height:50vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px;">';
+    if(txs.length===0){
+      html += '<div class="empty" style="padding:20px;">ما في حركات مسجلة لهاد الزبون.</div>';
+    } else {
+      txs.forEach(function(t){
+        var checked = state.selectedStatementTxIds.indexOf(t.id) !== -1;
+        var total = txTotal(t);
+        html += '<div class="tx-item" data-toggle-stmt-tx="'+t.id+'" style="cursor:pointer;'+(checked?'border-color:var(--accent);':'')+'">';
+        html += '  <div class="tx-left"><div class="tx-desc">'+(checked?'☑':'☐')+' '+escapeHtml(t.description||(t.type==='out'?'منصرف':'وارد'))+'</div>';
+        html += '  <div class="tx-meta"><span>'+formatDateTime(t.createdAt)+'</span></div></div>';
+        html += '  <div class="tx-right"><div class="tx-amount '+t.type+'">'+(t.type==='out'?'+':'−')+fmt(total)+'</div></div>';
+        html += '</div>';
+      });
+    }
+    html += '    </div>';
+    html += '    <div class="sheet-actions" style="margin-top:14px;"><button class="btn btn-ghost" id="cancelSelectStmt">إلغاء</button><button class="btn btn-accent" id="continueToExport">متابعة</button></div>';
+    html += '  </div>';
+    html += '</div>';
+    return html;
+  }
+
   function renderExportChoiceSheet(){
     var html = '';
     html += '<div class="overlay" id="overlay">';
     html += '  <div class="sheet">';
     html += '    <div class="sheet-title">تصدير كشف حساب</div>';
-    html += '    <div class="sheet-text">اختار الشكل يلي بدك ترسله للزبون.</div>';
+    html += '    <div class="sheet-text">اخترتِ '+state.selectedStatementTxIds.length+' حركة. اختاري الشكل يلي بدك ترسله للزبون.</div>';
     html += '    <div class="settings-row">';
     html += '      <button class="btn btn-accent" id="exportAsImage">تصدير كصورة</button>';
     html += '      <button class="btn btn-ghost" id="exportAsPdf">تصدير كـ PDF</button>';
@@ -1163,8 +1200,13 @@
   }
 
   function buildStatementNode(c){
-    var bal = customerBalance(c.id);
-    var txs = customerTx(c.id).slice().reverse().slice(0, 12);
+    var selectedTxs = customerTx(c.id).filter(function(t){ return state.selectedStatementTxIds.indexOf(t.id) !== -1; });
+    var bal = 0;
+    selectedTxs.forEach(function(t){
+      var total = txTotal(t);
+      bal += (t.type === 'out' ? total : -total);
+    });
+    var txs = selectedTxs.slice().reverse();
     var wrap = document.createElement('div');
     wrap.className = 'statement-wrap';
     var html = '';
@@ -1174,7 +1216,7 @@
     getCodes(c,'mtn').forEach(function(x){ codesLine.push('MTN: '+x); });
     getCodes(c,'syr').forEach(function(x){ codesLine.push('سيريتل: '+x); });
     if(codesLine.length) html += '<div class="statement-sub">'+escapeHtml(codesLine.join(' · '))+'</div>';
-    html += '<div class="statement-bal-row"><div><div class="statement-bal-label">'+(bal>0?'المستحق على الزبون':(bal<0?'رصيد لصالح الزبون':'الحساب مسدد'))+'</div></div>';
+    html += '<div class="statement-bal-row"><div><div class="statement-bal-label">'+(bal>0?'إجمالي المستحق (العمليات المختارة)':(bal<0?'إجمالي لصالح الزبون (العمليات المختارة)':'صفر (العمليات المختارة)'))+'</div></div>';
     html += '<div class="statement-bal-value" style="color:'+(bal>0?'#E38455':(bal<0?'#74BB8E':'#ECE8DF'))+';">'+fmt(Math.abs(bal))+' ل.س</div></div>';
     if(txs.length){
       html += '<div style="font-size:12px;color:#93A2A6;margin-bottom:4px;">آخر الحركات</div>';
@@ -1390,7 +1432,35 @@
       state.editingCustomerId = state.activeCustomerId; state.modal='edit-customer'; render();
     });
     var exportStatementBtn = document.getElementById('exportStatementBtn');
-    if(exportStatementBtn) exportStatementBtn.addEventListener('click', function(){ state.modal='export-statement'; render(); });
+    if(exportStatementBtn) exportStatementBtn.addEventListener('click', function(){
+      var txs = customerTx(state.activeCustomerId);
+      state.selectedStatementTxIds = txs.map(function(t){ return t.id; }); // افتراضيًا: كل الحركات محددة
+      state.modal = 'select-statement-tx';
+      render();
+    });
+    document.querySelectorAll('[data-toggle-stmt-tx]').forEach(function(el){
+      el.addEventListener('click', function(){
+        var id = el.getAttribute('data-toggle-stmt-tx');
+        var idx = state.selectedStatementTxIds.indexOf(id);
+        if(idx === -1) state.selectedStatementTxIds.push(id);
+        else state.selectedStatementTxIds.splice(idx,1);
+        render();
+      });
+    });
+    var selectAllTx = document.getElementById('selectAllTx');
+    if(selectAllTx) selectAllTx.addEventListener('click', function(){
+      state.selectedStatementTxIds = customerTx(state.activeCustomerId).map(function(t){ return t.id; });
+      render();
+    });
+    var deselectAllTx = document.getElementById('deselectAllTx');
+    if(deselectAllTx) deselectAllTx.addEventListener('click', function(){
+      state.selectedStatementTxIds = [];
+      render();
+    });
+    var cancelSelectStmt = document.getElementById('cancelSelectStmt');
+    if(cancelSelectStmt) cancelSelectStmt.addEventListener('click', function(){ state.modal=null; render(); });
+    var continueToExport = document.getElementById('continueToExport');
+    if(continueToExport) continueToExport.addEventListener('click', function(){ state.modal='export-statement'; render(); });
     var cancelExportChoice = document.getElementById('cancelExportChoice');
     if(cancelExportChoice) cancelExportChoice.addEventListener('click', function(){ state.modal=null; render(); });
     var exportAsImage = document.getElementById('exportAsImage');
