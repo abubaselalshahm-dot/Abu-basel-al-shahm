@@ -11,6 +11,9 @@
 <meta name="apple-mobile-web-app-title" content="Abu Basel Al Shahm">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap');
 
@@ -223,6 +226,64 @@
   .confirm-msg{ font-size:14.5px; line-height:1.8; margin-bottom:20px; }
 
   .loading{ display:flex; align-items:center; justify-content:center; min-height:100vh; color:var(--ink-dim); font-size:14px; }
+
+  /* آلة حاسبة */
+  .calc-display{
+    background:var(--surface-2); border:1px solid var(--border); border-radius:12px;
+    padding:22px 16px; text-align:left; font-family:'Tajawal',sans-serif; font-size:36px;
+    font-weight:800; margin-bottom:14px; overflow-x:auto; white-space:nowrap; direction:ltr;
+  }
+  .calc-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  .calc-btn{
+    background:var(--surface-2); border:1px solid var(--border); color:var(--ink);
+    border-radius:10px; padding:16px 0; font-size:18px; font-weight:700; cursor:pointer;
+    font-family:'Tajawal',sans-serif; transition:opacity .1s, transform .1s;
+  }
+  .calc-btn:active{ transform:scale(0.95); }
+  .calc-btn.op{ background:rgba(203,145,82,0.16); color:var(--accent); }
+  .calc-btn.eq{ background:var(--accent); color:var(--accent-ink); }
+  .calc-btn.fn{ background:rgba(213,101,78,0.16); color:var(--danger); }
+
+  /* شارات الكود القابلة للكشف */
+  .code-chip{
+    font-size:11px; font-weight:700; padding:3px 9px; border-radius:6px; white-space:nowrap;
+    cursor:pointer; border:none; font-family:inherit; transition:opacity .1s;
+  }
+  .code-chip:active{ opacity:0.8; }
+  .code-chip.chip-mtn{background:rgba(255,204,0,0.15); color:var(--mtn);}
+  .code-chip.chip-syr{background:rgba(228,3,46,0.15); color:#F0705F;}
+
+  /* شبكة اختيار التصنيف */
+  .cat-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+  .cat-opt{
+    display:flex; align-items:center; justify-content:center; gap:6px;
+    padding:12px 8px; border-radius:10px; border:1.5px solid var(--border);
+    background:var(--surface-2); cursor:pointer; font-weight:700; font-size:13px;
+    color:var(--ink-dim); transition:all .15s;
+  }
+  .cat-opt .dot{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+  .cat-opt.selected{ border-color:var(--accent); color:var(--ink); background:rgba(203,145,82,0.12); }
+
+  /* كشف الحساب للتصدير */
+  .statement-wrap{
+    position:fixed; top:-9999px; left:-9999px; width:420px; background:#121A1E;
+    font-family:'IBM Plex Sans Arabic', sans-serif; padding:26px; color:#ECE8DF; direction:rtl;
+  }
+  .statement-head{ text-align:center; margin-bottom:18px; border-bottom:2px solid #CB9152; padding-bottom:14px; }
+  .statement-title{ font-size:18px; font-weight:800; color:#CB9152; }
+  .statement-sub{ font-size:12px; color:#93A2A6; margin-top:4px; }
+  .statement-cust{ font-size:20px; font-weight:800; margin:14px 0 4px; }
+  .statement-bal-row{
+    display:flex; justify-content:space-between; align-items:center; background:#1A2328;
+    border-radius:12px; padding:16px; margin:14px 0;
+  }
+  .statement-bal-label{ font-size:12px; color:#93A2A6; }
+  .statement-bal-value{ font-size:26px; font-weight:800; font-family:'Tajawal',sans-serif; }
+  .statement-row{
+    display:flex; justify-content:space-between; font-size:12.5px; padding:9px 0;
+    border-bottom:1px solid rgba(236,232,223,0.08);
+  }
+  .statement-foot{ text-align:center; font-size:10.5px; color:#93A2A6; margin-top:16px; }
 </style>
 </head>
 <body>
@@ -293,7 +354,9 @@
     pendingSync: false,
     onlineCount: 0,
     installCount: 0,
-    currencyMode: 'old' // old = ل.س (القديمة) | new = ل.س.ج (الجديدة)
+    currencyMode: 'old', // old = ل.س (القديمة) | new = ل.س.ج (الجديدة)
+    revealedChips: {},
+    calc: { display: '0', prev: null, op: null, waitingNew: false }
   };
 
   var CURRENCY_RATE = 100; // كم ل.س قديم = ل.س.ج واحد. غيّري الرقم هون لو تغيّر سعر الصرف الرسمي
@@ -480,10 +543,40 @@
     var c = state.customers.find(function(x){ return x.id===id; });
     return c ? c.name : 'زبون محذوف';
   }
+  function getCodes(c, type){
+    var arr = (type==='mtn' ? c.mtnCodes : c.syriatelCodes) || [];
+    var legacy = type==='mtn' ? c.mtnCode : c.syriatelCode;
+    var result = arr.slice();
+    if(legacy && result.indexOf(legacy) === -1) result.unshift(legacy);
+    return result.filter(Boolean);
+  }
+  function codeChipHtml(c, type){
+    var codes = getCodes(c, type);
+    if(codes.length === 0) return '';
+    var label = type==='mtn' ? 'MTN' : 'سيريتل';
+    var cls = type==='mtn' ? 'chip-mtn' : 'chip-syr';
+    var key = c.id+'-'+type;
+    var revealed = !!state.revealedChips[key];
+    var text = revealed ? codes.join('، ') : (label + (codes.length>1 ? ' ('+codes.length+')' : ''));
+    return '<button type="button" class="code-chip '+cls+'" data-reveal-chip="'+key+'">'+escapeHtml(text)+'</button>';
+  }
   function chip(network){
     var n = NETWORKS[network] || NETWORKS.none;
     if(network==='none' || !network) return '';
     return '<span class="chip '+n.chipClass+'">'+n.label+'</span>';
+  }
+  var NETWORK_COLOR = {
+    mtn:'#FFCC00', syriatel:'#E4032E', fatura_mtn:'#FFCC00', fatura_syriatel:'#E4032E',
+    cash_mtn:'#CB9152', cash_syriatel:'#CB9152', sham_cash:'#CB9152', usd:'#74BB8E', none:'#93A2A6'
+  };
+  function categoryGridHtml(selected, dataAttr){
+    var html = '<div class="cat-grid">';
+    html += '<div class="cat-opt'+(selected==='none'?' selected':'')+'" data-'+dataAttr+'="none"><span class="dot" style="background:'+NETWORK_COLOR.none+';"></span>بدون تصنيف</div>';
+    NETWORK_GROUP.concat(PAYMENT_GROUP).forEach(function(k){
+      html += '<div class="cat-opt'+(selected===k?' selected':'')+'" data-'+dataAttr+'="'+k+'"><span class="dot" style="background:'+NETWORK_COLOR[k]+';"></span>'+NETWORKS[k].label+'</div>';
+    });
+    html += '</div>';
+    return html;
   }
   function networkSelectOptions(selected){
     var html = '<option value="none"'+(selected==='none'?' selected':'')+'>بدون تصنيف</option>';
@@ -526,6 +619,12 @@
     if(state.modal === 'edit-entry'){
       app.insertAdjacentHTML('beforeend', renderEntrySheet());
     }
+    if(state.modal === 'export-statement'){
+      app.insertAdjacentHTML('beforeend', renderExportChoiceSheet());
+    }
+    if(state.modal === 'calculator'){
+      app.insertAdjacentHTML('beforeend', renderCalculatorSheet());
+    }
     if(state.modal === 'settings'){
       app.insertAdjacentHTML('beforeend', renderSettingsSheet());
     }
@@ -547,12 +646,12 @@
     var q = state.search.trim().toLowerCase();
     var list = state.customers.filter(function(c){
       if(!q) return true;
-      return c.name.toLowerCase().includes(q) || (c.mtnCode||'').includes(q) || (c.syriatelCode||'').includes(q);
-    }).sort(function(a,b){ return customerBalance(b.id) - customerBalance(a.id); });
+      return c.name.toLowerCase().includes(q) || getCodes(c,'mtn').some(function(x){return x.includes(q);}) || getCodes(c,'syr').some(function(x){return x.includes(q);});
+    }).sort(function(a,b){ return state.customers.indexOf(b) - state.customers.indexOf(a); });
 
     var html = '';
     html += '<div class="header">';
-    html += '  <div class="header-top"><div class="brand">Abu Basel Al Shahm'+syncBadge()+'</div><div class="icon-btn" id="openSettings" title="نسخة احتياطية">⚙</div></div>';
+    html += '  <div class="header-top"><div class="brand">Abu Basel Al Shahm'+syncBadge()+'</div><div style="display:flex;gap:8px;align-items:center;">'+currencyToggleBtn()+'<div class="icon-btn" id="openCalc" title="آلة حاسبة">🧮</div><div class="icon-btn" id="openSettings" title="نسخة احتياطية">⚙</div></div></div>';
     html += statusLine();
     html += renderTabs();
     html += '</div>';
@@ -570,10 +669,10 @@
         var subLabel = bal > 0 ? 'مستحق' : (bal < 0 ? 'رصيد لصالحه' : 'مسدد');
         html += '<div class="customer-card" data-open="'+c.id+'">';
         html += '  <div class="customer-info"><div class="customer-name">#'+customerNumber(c.id)+' — '+escapeHtml(c.name)+'</div><div class="chips">';
-        if(c.mtnCode) html += '<span class="chip chip-mtn">MTN '+escapeHtml(c.mtnCode)+'</span>';
-        if(c.syriatelCode) html += '<span class="chip chip-syr">سيريتل '+escapeHtml(c.syriatelCode)+'</span>';
+        html += codeChipHtml(c, 'mtn');
+        html += codeChipHtml(c, 'syr');
         html += '  </div></div>';
-        html += '  <div class="customer-balance '+balClass+'">'+fmt(Math.abs(bal))+'<span class="sub">'+subLabel+'</span></div>';
+        html += '  <div class="customer-balance '+balClass+'">'+formatMoney(bal)+'<span class="sub">'+subLabel+'</span></div>';
         html += '</div>';
       });
       html += '</div>';
@@ -669,12 +768,12 @@
     html += '  <div class="back-row"><button class="back-btn" id="backBtn">→ كل الزباين</button></div>';
     html += '  <div class="detail-name">#'+customerNumber(c.id)+' — '+escapeHtml(c.name)+'</div>';
     html += '  <div class="detail-chips">';
-    if(c.mtnCode) html += '<span class="chip chip-mtn">MTN '+escapeHtml(c.mtnCode)+'</span>';
-    if(c.syriatelCode) html += '<span class="chip chip-syr">سيريتل '+escapeHtml(c.syriatelCode)+'</span>';
+    html += codeChipHtml(c, 'mtn');
+    html += codeChipHtml(c, 'syr');
     html += '  </div>';
     html += '  <div class="detail-balance-row">';
     html += '    <div><div class="stat-label">الرصيد الحالي</div><div class="stat-value '+balClass+'" style="font-size:26px;">'+formatMoney(bal)+' '+currencyToggleBtn()+'</div></div>';
-    html += '    <div class="detail-links"><button class="link-btn" id="editCustomerBtn">تعديل</button><button class="link-btn danger" id="delCustomerBtn">حذف</button></div>';
+    html += '    <div class="detail-links"><button class="link-btn" id="editCustomerBtn">تعديل</button><button class="link-btn" id="exportStatementBtn">تصدير كشف حساب</button><button class="link-btn danger" id="delCustomerBtn">حذف</button></div>';
     html += '  </div>';
     html += '</div>';
 
@@ -686,7 +785,7 @@
     html += '  </div>';
     if(state.txFormOpen){
       if(state.txType === 'out'){
-        html += '  <div class="field"><label>التصنيف</label><select id="txNetwork">'+networkSelectOptions(state.txNetwork)+'</select></div>';
+        html += '  <div class="field"><label>التصنيف</label>'+categoryGridHtml(state.txNetwork, 'cat-select')+'</div>';
         html += '  <div class="field"><label>الوصف</label><input id="txDesc" placeholder="وصف العملية"></div>';
         html += '  <div class="row2">';
         html += '    <div class="field"><label>المبلغ</label><input id="txBase" type="number" inputmode="numeric" placeholder="0"></div>';
@@ -735,8 +834,12 @@
     html += '  <div class="sheet">';
     html += '    <div class="sheet-title">'+(editing ? 'تعديل بيانات الزبون' : 'إضافة زبون جديد')+'</div>';
     html += '    <div class="field"><label>اسم الزبون</label><input id="custName" placeholder="اسم الزبون" value="'+escapeHtml(c?c.name:'')+'" autofocus></div>';
-    html += '    <div class="field"><label>كود MTN (اختياري)</label><input id="custMtn" placeholder="كود MTN" value="'+escapeHtml(c?c.mtnCode:'')+'"></div>';
-    html += '    <div class="field"><label>كود سيريتل (اختياري)</label><input id="custSyr" placeholder="كود سيريتل" value="'+escapeHtml(c?c.syriatelCode:'')+'"></div>';
+    var mtnCodes = c ? getCodes(c,'mtn') : [];
+    var syrCodes = c ? getCodes(c,'syr') : [];
+    html += '    <div class="row2"><div class="field"><label>كود MTN 1</label><input id="custMtn1" placeholder="كود MTN" value="'+escapeHtml(mtnCodes[0]||'')+'"></div>';
+    html += '    <div class="field"><label>كود MTN 2</label><input id="custMtn2" placeholder="كود MTN" value="'+escapeHtml(mtnCodes[1]||'')+'"></div></div>';
+    html += '    <div class="row2"><div class="field"><label>كود سيريتل 1</label><input id="custSyr1" placeholder="كود سيريتل" value="'+escapeHtml(syrCodes[0]||'')+'"></div>';
+    html += '    <div class="field"><label>كود سيريتل 2</label><input id="custSyr2" placeholder="كود سيريتل" value="'+escapeHtml(syrCodes[1]||'')+'"></div></div>';
     html += '    <div class="sheet-actions">';
     html += '      <button class="btn btn-ghost" id="cancelCustSheet">إلغاء</button>';
     html += '      <button class="btn btn-accent" id="saveCustomer">'+(editing?'حفظ التعديلات':'حفظ الزبون')+'</button>';
@@ -758,7 +861,7 @@
     html += '      <div class="toggle-opt '+(state.txType==='in'?'active-in':'')+'" data-edit-tx-type="in">وارد</div>';
     html += '    </div>';
     if(state.txType === 'out'){
-      html += '    <div class="field"><label>التصنيف</label><select id="editTxNetwork">'+networkSelectOptions(state.txNetwork)+'</select></div>';
+      html += '    <div class="field"><label>التصنيف</label>'+categoryGridHtml(state.txNetwork, 'cat-select-edit')+'</div>';
       html += '    <div class="field"><label>الوصف</label><input id="editTxDesc" placeholder="وصف العملية" value="'+escapeHtml(t.description)+'"></div>';
       html += '    <div class="row2">';
       html += '      <div class="field"><label>المبلغ</label><input id="editTxBase" type="number" inputmode="numeric" value="'+(t.baseAmount||0)+'"></div>';
@@ -799,6 +902,82 @@
     return html;
   }
 
+  function renderCalculatorSheet(){
+    var html = '';
+    html += '<div class="overlay" id="overlay">';
+    html += '  <div class="sheet">';
+    html += '    <div class="sheet-title">آلة حاسبة</div>';
+    html += '    <div class="calc-display">'+escapeHtml(state.calc.display)+'</div>';
+    html += '    <div class="calc-grid">';
+    html += '      <button class="calc-btn fn" data-calc="clear">AC</button>';
+    html += '      <button class="calc-btn fn" data-calc="sign">±</button>';
+    html += '      <button class="calc-btn fn" data-calc="percent">%</button>';
+    html += '      <button class="calc-btn op" data-calc="divide">÷</button>';
+    html += '      <button class="calc-btn" data-calc="7">7</button>';
+    html += '      <button class="calc-btn" data-calc="8">8</button>';
+    html += '      <button class="calc-btn" data-calc="9">9</button>';
+    html += '      <button class="calc-btn op" data-calc="multiply">×</button>';
+    html += '      <button class="calc-btn" data-calc="4">4</button>';
+    html += '      <button class="calc-btn" data-calc="5">5</button>';
+    html += '      <button class="calc-btn" data-calc="6">6</button>';
+    html += '      <button class="calc-btn op" data-calc="subtract">−</button>';
+    html += '      <button class="calc-btn" data-calc="1">1</button>';
+    html += '      <button class="calc-btn" data-calc="2">2</button>';
+    html += '      <button class="calc-btn" data-calc="3">3</button>';
+    html += '      <button class="calc-btn op" data-calc="add">+</button>';
+    html += '      <button class="calc-btn" data-calc="0" style="grid-column:span 2;">0</button>';
+    html += '      <button class="calc-btn" data-calc="dot">.</button>';
+    html += '      <button class="calc-btn eq" data-calc="equals">=</button>';
+    html += '    </div>';
+    html += '    <div class="sheet-actions" style="margin-top:14px;"><button class="btn btn-ghost" id="closeCalc">إغلاق</button></div>';
+    html += '  </div>';
+    html += '</div>';
+    return html;
+  }
+  function calcOp(a, b, op){
+    switch(op){
+      case 'add': return a + b;
+      case 'subtract': return a - b;
+      case 'multiply': return a * b;
+      case 'divide': return b === 0 ? 0 : a / b;
+      default: return b;
+    }
+  }
+  function calcPress(key){
+    var c = state.calc;
+    if(key === 'clear'){ c.display='0'; c.prev=null; c.op=null; c.waitingNew=false; return; }
+    if(key === 'sign'){ c.display = String(Number(c.display) * -1); return; }
+    if(key === 'percent'){ c.display = String(Number(c.display) / 100); return; }
+    if(key === 'dot'){
+      if(c.waitingNew){ c.display='0.'; c.waitingNew=false; return; }
+      if(c.display.indexOf('.') === -1) c.display += '.';
+      return;
+    }
+    if(/^[0-9]$/.test(key)){
+      if(c.waitingNew || c.display === '0'){ c.display = key; c.waitingNew = false; }
+      else { c.display += key; }
+      return;
+    }
+    if(['add','subtract','multiply','divide'].indexOf(key) !== -1){
+      if(c.op && !c.waitingNew){
+        c.prev = calcOp(c.prev, Number(c.display), c.op);
+        c.display = String(Math.round(c.prev * 1e8) / 1e8);
+      } else {
+        c.prev = Number(c.display);
+      }
+      c.op = key;
+      c.waitingNew = true;
+      return;
+    }
+    if(key === 'equals'){
+      if(c.op == null) return;
+      var result = calcOp(c.prev, Number(c.display), c.op);
+      c.display = String(Math.round(result * 1e8) / 1e8);
+      c.prev = null; c.op = null; c.waitingNew = true;
+      return;
+    }
+  }
+
   function renderSettingsSheet(){
     var html = '';
     html += '<div class="overlay" id="overlay">';
@@ -831,6 +1010,80 @@
     return html;
   }
 
+  function renderExportChoiceSheet(){
+    var html = '';
+    html += '<div class="overlay" id="overlay">';
+    html += '  <div class="sheet">';
+    html += '    <div class="sheet-title">تصدير كشف حساب</div>';
+    html += '    <div class="sheet-text">اختار الشكل يلي بدك ترسله للزبون.</div>';
+    html += '    <div class="settings-row">';
+    html += '      <button class="btn btn-accent" id="exportAsImage">تصدير كصورة</button>';
+    html += '      <button class="btn btn-ghost" id="exportAsPdf">تصدير كـ PDF</button>';
+    html += '    </div>';
+    html += '    <div class="sheet-actions"><button class="btn btn-ghost" id="cancelExportChoice">إلغاء</button></div>';
+    html += '  </div>';
+    html += '</div>';
+    return html;
+  }
+
+  function buildStatementNode(c){
+    var bal = customerBalance(c.id);
+    var txs = customerTx(c.id).slice().reverse().slice(0, 12);
+    var wrap = document.createElement('div');
+    wrap.className = 'statement-wrap';
+    var html = '';
+    html += '<div class="statement-head"><div class="statement-title">Abu Basel Al Shahm</div><div class="statement-sub">كشف حساب زبون</div></div>';
+    html += '<div class="statement-cust">'+escapeHtml(c.name)+'</div>';
+    var codesLine = [];
+    getCodes(c,'mtn').forEach(function(x){ codesLine.push('MTN: '+x); });
+    getCodes(c,'syr').forEach(function(x){ codesLine.push('سيريتل: '+x); });
+    if(codesLine.length) html += '<div class="statement-sub">'+escapeHtml(codesLine.join(' · '))+'</div>';
+    html += '<div class="statement-bal-row"><div><div class="statement-bal-label">'+(bal>0?'المستحق على الزبون':(bal<0?'رصيد لصالح الزبون':'الحساب مسدد'))+'</div></div>';
+    html += '<div class="statement-bal-value" style="color:'+(bal>0?'#E38455':(bal<0?'#74BB8E':'#ECE8DF'))+';">'+fmt(Math.abs(bal))+' ل.س</div></div>';
+    if(txs.length){
+      html += '<div style="font-size:12px;color:#93A2A6;margin-bottom:4px;">آخر الحركات</div>';
+      txs.forEach(function(t){
+        var total = txTotal(t);
+        html += '<div class="statement-row"><span>'+escapeHtml(t.description||(t.type==='out'?'منصرف':'وارد'))+' · '+formatDateTime(t.createdAt)+'</span><span style="color:'+(t.type==='out'?'#E38455':'#74BB8E')+';font-weight:700;">'+(t.type==='out'?'+':'−')+fmt(total)+'</span></div>';
+      });
+    }
+    html += '<div class="statement-foot">تاريخ الإصدار: '+formatDateTime(Date.now())+'</div>';
+    wrap.innerHTML = html;
+    document.body.appendChild(wrap);
+    return wrap;
+  }
+
+  function exportStatementAs(type){
+    var c = state.customers.find(function(x){ return x.id === state.activeCustomerId; });
+    if(!c) return;
+    var node = buildStatementNode(c);
+    html2canvas(node, {backgroundColor:'#121A1E', scale:2}).then(function(canvas){
+      document.body.removeChild(node);
+      var safeName = c.name.replace(/[^\u0600-\u06FFa-zA-Z0-9]+/g,'-');
+      if(type === 'image'){
+        canvas.toBlob(function(blob){
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url; a.download = 'كشف-حساب-'+safeName+'.png';
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+        });
+      } else {
+        var imgData = canvas.toDataURL('image/png');
+        var jsPDFCtor = window.jspdf ? window.jspdf.jsPDF : null;
+        if(!jsPDFCtor){ alert('تعذّر تحميل أداة PDF، جرب تصدير الصورة بدلها.'); return; }
+        var pdf = new jsPDFCtor({ unit:'px', format:[canvas.width, canvas.height] });
+        pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+        pdf.save('كشف-حساب-'+safeName+'.pdf');
+      }
+      state.modal = null; render();
+    }).catch(function(e){
+      console.error('export failed', e);
+      if(document.body.contains(node)) document.body.removeChild(node);
+      alert('صار خطأ بالتصدير، جرب مرة تانية.');
+    });
+  }
+
   function exportBackup(){
     var data = { customers: state.customers, transactions: state.transactions, accountEntries: state.accountEntries, exportedAt: new Date().toISOString() };
     var blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
@@ -847,6 +1100,15 @@
 
   // ---------- events ----------
   function bindEvents(){
+    document.querySelectorAll('[data-reveal-chip]').forEach(function(el){
+      el.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        var key = el.getAttribute('data-reveal-chip');
+        state.revealedChips[key] = !state.revealedChips[key];
+        render();
+      });
+    });
+
     document.querySelectorAll('[data-tab]').forEach(function(el){
       el.addEventListener('click', function(){
         state.screen = el.getAttribute('data-tab') === 'accounts' ? 'accounts-list' : 'customers-list';
@@ -870,6 +1132,14 @@
 
     var openSettings = document.getElementById('openSettings');
     if(openSettings) openSettings.addEventListener('click', function(){ state.modal='settings'; render(); });
+
+    var openCalc = document.getElementById('openCalc');
+    if(openCalc) openCalc.addEventListener('click', function(){ state.modal='calculator'; render(); });
+    var closeCalc = document.getElementById('closeCalc');
+    if(closeCalc) closeCalc.addEventListener('click', function(){ state.modal=null; render(); });
+    document.querySelectorAll('[data-calc]').forEach(function(el){
+      el.addEventListener('click', function(){ calcPress(el.getAttribute('data-calc')); render(); });
+    });
 
     var toggleCurrency = document.getElementById('toggleCurrency');
     if(toggleCurrency) toggleCurrency.addEventListener('click', function(){
@@ -912,6 +1182,14 @@
     if(editCustomerBtn) editCustomerBtn.addEventListener('click', function(){
       state.editingCustomerId = state.activeCustomerId; state.modal='edit-customer'; render();
     });
+    var exportStatementBtn = document.getElementById('exportStatementBtn');
+    if(exportStatementBtn) exportStatementBtn.addEventListener('click', function(){ state.modal='export-statement'; render(); });
+    var cancelExportChoice = document.getElementById('cancelExportChoice');
+    if(cancelExportChoice) cancelExportChoice.addEventListener('click', function(){ state.modal=null; render(); });
+    var exportAsImage = document.getElementById('exportAsImage');
+    if(exportAsImage) exportAsImage.addEventListener('click', function(){ exportStatementAs('image'); });
+    var exportAsPdf = document.getElementById('exportAsPdf');
+    if(exportAsPdf) exportAsPdf.addEventListener('click', function(){ exportStatementAs('pdf'); });
     var delCustomerBtn = document.getElementById('delCustomerBtn');
     if(delCustomerBtn) delCustomerBtn.addEventListener('click', function(){
       var c = state.customers.find(function(x){ return x.id === state.activeCustomerId; });
@@ -923,6 +1201,12 @@
     document.querySelectorAll('[data-tx-type]').forEach(function(el){
       el.addEventListener('click', function(){ state.txType = el.getAttribute('data-tx-type'); state.txFormOpen = true; render(); });
     });
+    document.querySelectorAll('[data-cat-select]').forEach(function(el){
+      el.addEventListener('click', function(){ state.txNetwork = el.getAttribute('data-cat-select'); render(); });
+    });
+    document.querySelectorAll('[data-cat-select-edit]').forEach(function(el){
+      el.addEventListener('click', function(){ state.txNetwork = el.getAttribute('data-cat-select-edit'); render(); });
+    });
 
     var addTxBtn = document.getElementById('addTxBtn');
     if(addTxBtn) addTxBtn.addEventListener('click', function(){
@@ -933,7 +1217,7 @@
       var base = Number(baseEl.value);
       var markup = markupEl ? (Number(markupEl.value)||0) : 0;
       if(!base || base <= 0){ baseEl.focus(); return; }
-      var network = state.txType === 'out' ? document.getElementById('txNetwork').value : 'none';
+      var network = state.txType === 'out' ? state.txNetwork : 'none';
       state.transactions.push({
         id: uid(), customerId: state.activeCustomerId, type: state.txType, network: network,
         description: desc, baseAmount: base, markup: markup, createdAt: Date.now()
@@ -964,7 +1248,7 @@
       var markupEl = document.getElementById('editTxMarkup');
       var base = Number(baseEl.value);
       if(!base || base <= 0){ baseEl.focus(); return; }
-      var network = state.txType === 'out' ? document.getElementById('editTxNetwork').value : 'none';
+      var network = state.txType === 'out' ? state.txNetwork : 'none';
       t.description = descEl.value.trim();
       t.baseAmount = base;
       t.markup = markupEl ? (Number(markupEl.value)||0) : 0;
@@ -1047,13 +1331,13 @@
       var nameEl = document.getElementById('custName');
       var name = nameEl.value.trim();
       if(!name){ nameEl.focus(); return; }
-      var mtn = document.getElementById('custMtn').value.trim();
-      var syr = document.getElementById('custSyr').value.trim();
+      var mtnCodes = [document.getElementById('custMtn1').value.trim(), document.getElementById('custMtn2').value.trim()].filter(Boolean);
+      var syrCodes = [document.getElementById('custSyr1').value.trim(), document.getElementById('custSyr2').value.trim()].filter(Boolean);
       if(state.modal === 'edit-customer'){
         var c = state.customers.find(function(x){ return x.id === state.editingCustomerId; });
-        if(c){ c.name=name; c.mtnCode=mtn; c.syriatelCode=syr; }
+        if(c){ c.name=name; c.mtnCodes=mtnCodes; c.syriatelCodes=syrCodes; c.mtnCode=''; c.syriatelCode=''; }
       } else {
-        state.customers.push({ id: uid(), name:name, mtnCode:mtn, syriatelCode:syr, createdAt: Date.now() });
+        state.customers.push({ id: uid(), name:name, mtnCodes:mtnCodes, syriatelCodes:syrCodes, createdAt: Date.now() });
       }
       state.modal = null; state.editingCustomerId = null;
       persist(); render();
