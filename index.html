@@ -675,6 +675,9 @@
     if(state.modal === 'select-statement-tx'){
       app.insertAdjacentHTML('beforeend', renderSelectStatementSheet());
     }
+    if(state.modal === 'customer-menu'){
+      app.insertAdjacentHTML('beforeend', renderCustomerMenuSheet());
+    }
     if(state.modal === 'calculator'){
       app.insertAdjacentHTML('beforeend', renderCalculatorSheet());
     }
@@ -780,7 +783,7 @@
     html += '</div>';
 
     html += '<div class="tx-form">';
-    html += '  <div class="tx-form-title">إضافة حركة يدوية</div>';
+    html += '  <div class="tx-form-title" style="display:flex;justify-content:space-between;align-items:center;"><span>إضافة حركة يدوية</span>'+(state.entryFormOpen?'<button class="link-btn" id="closeEntryForm" style="font-size:17px;">✕</button>':'')+'</div>';
     html += '  <div class="toggle-row">';
     html += '    <div class="toggle-opt '+(state.entryFormOpen && state.entryType==='out'?'active-out':'')+'" data-entry-type="out">منصرف</div>';
     html += '    <div class="toggle-opt '+(state.entryFormOpen && state.entryType==='in'?'active-in':'')+'" data-entry-type="in">وارد</div>';
@@ -913,12 +916,12 @@
     html += '  </div>';
     html += '  <div class="detail-balance-row">';
     html += '    <div><div class="stat-label">الرصيد الحالي</div><div class="stat-value '+balClass+'" style="font-size:26px;">'+formatMoney(bal)+' '+currencyToggleBtn()+'</div></div>';
-    html += '    <div class="detail-links"><button class="link-btn" id="editCustomerBtn">تعديل</button><button class="link-btn" id="exportStatementBtn">تصدير كشف حساب</button><button class="link-btn danger" id="delCustomerBtn">حذف</button></div>';
+    html += '    <div class="detail-links"><button class="icon-btn" id="openCustomerMenu" title="خيارات" style="width:34px;height:34px;font-size:18px;">⋮</button></div>';
     html += '  </div>';
     html += '</div>';
 
     html += '<div class="tx-form">';
-    html += '  <div class="tx-form-title">إضافة حركة جديدة</div>';
+    html += '  <div class="tx-form-title" style="display:flex;justify-content:space-between;align-items:center;"><span>إضافة حركة جديدة</span>'+(state.txFormOpen?'<button class="link-btn" id="closeTxForm" style="font-size:17px;">✕</button>':'')+'</div>';
     html += '  <div class="toggle-row">';
     html += '    <div class="toggle-opt '+(state.txFormOpen && state.txType==='out'?'active-out':'')+'" data-tx-type="out">منصرف</div>';
     html += '    <div class="toggle-opt '+(state.txFormOpen && state.txType==='in'?'active-in':'')+'" data-tx-type="in">وارد</div>';
@@ -1145,6 +1148,22 @@
     html += '      <button class="btn btn-ghost" id="confirmNo">إلغاء</button>';
     html += '      <button class="btn btn-danger" id="confirmYes">تأكيد</button>';
     html += '    </div>';
+    html += '  </div>';
+    html += '</div>';
+    return html;
+  }
+
+  function renderCustomerMenuSheet(){
+    var html = '';
+    html += '<div class="overlay" id="overlay">';
+    html += '  <div class="sheet">';
+    html += '    <div class="sheet-title">خيارات الزبون</div>';
+    html += '    <div class="settings-row">';
+    html += '      <button class="btn btn-ghost" id="menuEditCustomer">تعديل بيانات الزبون</button>';
+    html += '      <button class="btn btn-ghost" id="menuExportStatement">تصدير كشف حساب</button>';
+    html += '      <button class="btn btn-danger" id="menuDeleteCustomer">حذف الزبون</button>';
+    html += '    </div>';
+    html += '    <div class="sheet-actions" style="margin-top:10px;"><button class="btn btn-ghost" id="cancelCustomerMenu">إغلاق</button></div>';
     html += '  </div>';
     html += '</div>';
     return html;
@@ -1427,10 +1446,33 @@
     var backToAccounts = document.getElementById('backToAccounts');
     if(backToAccounts) backToAccounts.addEventListener('click', function(){ state.screen='accounts-list'; state.activeAccount=null; render(); });
 
-    var editCustomerBtn = document.getElementById('editCustomerBtn');
-    if(editCustomerBtn) editCustomerBtn.addEventListener('click', function(){
+    var openCustomerMenu = document.getElementById('openCustomerMenu');
+    if(openCustomerMenu) openCustomerMenu.addEventListener('click', function(){ state.modal='customer-menu'; render(); });
+    var cancelCustomerMenu = document.getElementById('cancelCustomerMenu');
+    if(cancelCustomerMenu) cancelCustomerMenu.addEventListener('click', function(){ state.modal=null; render(); });
+    var menuEditCustomer = document.getElementById('menuEditCustomer');
+    if(menuEditCustomer) menuEditCustomer.addEventListener('click', function(){
       state.editingCustomerId = state.activeCustomerId; state.modal='edit-customer'; render();
     });
+    var menuExportStatement = document.getElementById('menuExportStatement');
+    if(menuExportStatement) menuExportStatement.addEventListener('click', function(){
+      var txs = customerTx(state.activeCustomerId);
+      state.selectedStatementTxIds = txs.map(function(t){ return t.id; });
+      state.modal = 'select-statement-tx';
+      render();
+    });
+    var menuDeleteCustomer = document.getElementById('menuDeleteCustomer');
+    if(menuDeleteCustomer) menuDeleteCustomer.addEventListener('click', function(){
+      var c = state.customers.find(function(x){ return x.id === state.activeCustomerId; });
+      if(!c) return;
+      state.modal = null;
+      state.confirm = {message:'متأكد إنك بدك تحذف "'+escapeHtml(c.name)+'" وكل حركاته؟ ما في رجعة عن هالخطوة.', type:'delete-customer', id:c.id};
+      render();
+    });
+    var closeTxForm = document.getElementById('closeTxForm');
+    if(closeTxForm) closeTxForm.addEventListener('click', function(){ state.txFormOpen = false; render(); });
+    var closeEntryForm = document.getElementById('closeEntryForm');
+    if(closeEntryForm) closeEntryForm.addEventListener('click', function(){ state.entryFormOpen = false; render(); });
     var exportStatementBtn = document.getElementById('exportStatementBtn');
     if(exportStatementBtn) exportStatementBtn.addEventListener('click', function(){
       var txs = customerTx(state.activeCustomerId);
