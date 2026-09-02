@@ -285,7 +285,9 @@
     editingEntryId: null,
     txType: 'out',
     txNetwork: 'none',
+    txFormOpen: false,
     entryType: 'out',
+    entryFormOpen: false,
     confirm: null, // {message, type, id}
     loaded: false,
     pendingSync: false,
@@ -619,17 +621,17 @@
     html += '  <div class="account-breakdown" style="margin-top:10px;"><span>منصرف: <b>'+fmt(totals.out)+'</b></span><span>وارد: <b>'+fmt(totals.inn)+'</b></span></div>';
     html += '</div>';
 
-    html += '<div class="account-note">هاد الحساب بيجمع تلقائياً كل حركات الزباين المصنّفة "'+n.label+'" (المبلغ الأساسي بس، بدون الزيادة). وتقدر كمان تضيف حركات يدوية إلك، متل تعبئة رصيد الحساب.</div>';
-
     html += '<div class="tx-form">';
     html += '  <div class="tx-form-title">إضافة حركة يدوية</div>';
     html += '  <div class="toggle-row">';
-    html += '    <div class="toggle-opt '+(state.entryType==='out'?'active-out':'')+'" data-entry-type="out">منصرف</div>';
-    html += '    <div class="toggle-opt '+(state.entryType==='in'?'active-in':'')+'" data-entry-type="in">وارد</div>';
+    html += '    <div class="toggle-opt '+(state.entryFormOpen && state.entryType==='out'?'active-out':'')+'" data-entry-type="out">منصرف</div>';
+    html += '    <div class="toggle-opt '+(state.entryFormOpen && state.entryType==='in'?'active-in':'')+'" data-entry-type="in">وارد</div>';
     html += '  </div>';
-    html += '  <div class="field"><label>الوصف</label><input id="entryDesc" placeholder="وصف العملية"></div>';
-    html += '  <div class="field"><label>المبلغ (ل.س)</label><input id="entryAmount" type="number" inputmode="numeric" placeholder="0"></div>';
-    html += '  <button class="btn btn-accent" id="addEntryBtn">حفظ الحركة</button>';
+    if(state.entryFormOpen){
+      html += '  <div class="field"><label>الوصف</label><input id="entryDesc" placeholder="وصف العملية"></div>';
+      html += '  <div class="field"><label>المبلغ (ل.س)</label><input id="entryAmount" type="number" inputmode="numeric" placeholder="0"></div>';
+      html += '  <button class="btn btn-accent" id="addEntryBtn">حفظ الحركة</button>';
+    }
     html += '</div>';
 
     html += '<div class="tx-list">';
@@ -679,21 +681,23 @@
     html += '<div class="tx-form">';
     html += '  <div class="tx-form-title">إضافة حركة جديدة</div>';
     html += '  <div class="toggle-row">';
-    html += '    <div class="toggle-opt '+(state.txType==='out'?'active-out':'')+'" data-tx-type="out">منصرف</div>';
-    html += '    <div class="toggle-opt '+(state.txType==='in'?'active-in':'')+'" data-tx-type="in">وارد</div>';
+    html += '    <div class="toggle-opt '+(state.txFormOpen && state.txType==='out'?'active-out':'')+'" data-tx-type="out">منصرف</div>';
+    html += '    <div class="toggle-opt '+(state.txFormOpen && state.txType==='in'?'active-in':'')+'" data-tx-type="in">وارد</div>';
     html += '  </div>';
-    if(state.txType === 'out'){
-      html += '  <div class="field"><label>التصنيف</label><select id="txNetwork">'+networkSelectOptions(state.txNetwork)+'</select></div>';
-      html += '  <div class="field"><label>الوصف</label><input id="txDesc" placeholder="وصف العملية"></div>';
-      html += '  <div class="row2">';
-      html += '    <div class="field"><label>المبلغ</label><input id="txBase" type="number" inputmode="numeric" placeholder="0"></div>';
-      html += '    <div class="field"><label>الزيادة (اختياري)</label><input id="txMarkup" type="number" inputmode="numeric" placeholder="0"></div>';
-      html += '  </div>';
-    } else {
-      html += '  <div class="field"><label>الوصف</label><input id="txDesc" placeholder="وصف العملية"></div>';
-      html += '  <div class="field"><label>المبلغ</label><input id="txBase" type="number" inputmode="numeric" placeholder="0"></div>';
+    if(state.txFormOpen){
+      if(state.txType === 'out'){
+        html += '  <div class="field"><label>التصنيف</label><select id="txNetwork">'+networkSelectOptions(state.txNetwork)+'</select></div>';
+        html += '  <div class="field"><label>الوصف</label><input id="txDesc" placeholder="وصف العملية"></div>';
+        html += '  <div class="row2">';
+        html += '    <div class="field"><label>المبلغ</label><input id="txBase" type="number" inputmode="numeric" placeholder="0"></div>';
+        html += '    <div class="field"><label>الزيادة (اختياري)</label><input id="txMarkup" type="number" inputmode="numeric" placeholder="0"></div>';
+        html += '  </div>';
+      } else {
+        html += '  <div class="field"><label>الوصف</label><input id="txDesc" placeholder="وصف العملية"></div>';
+        html += '  <div class="field"><label>المبلغ</label><input id="txBase" type="number" inputmode="numeric" placeholder="0"></div>';
+      }
+      html += '  <button class="btn btn-accent" id="addTxBtn">حفظ الحركة</button>';
     }
-    html += '  <button class="btn btn-accent" id="addTxBtn">حفظ الحركة</button>';
     html += '</div>';
 
     html += '<div class="tx-list">';
@@ -877,7 +881,7 @@
       el.addEventListener('click', function(){
         state.activeCustomerId = el.getAttribute('data-open');
         state.screen = 'customer-detail';
-        state.txType = 'out'; state.txNetwork = 'none';
+        state.txType = 'out'; state.txNetwork = 'none'; state.txFormOpen = false;
         render();
       });
     });
@@ -886,7 +890,7 @@
       el.addEventListener('click', function(){
         state.activeAccount = el.getAttribute('data-open-account');
         state.screen = 'account-detail';
-        state.entryType = 'out';
+        state.entryType = 'out'; state.entryFormOpen = false;
         render();
       });
     });
@@ -917,7 +921,7 @@
     });
 
     document.querySelectorAll('[data-tx-type]').forEach(function(el){
-      el.addEventListener('click', function(){ state.txType = el.getAttribute('data-tx-type'); render(); });
+      el.addEventListener('click', function(){ state.txType = el.getAttribute('data-tx-type'); state.txFormOpen = true; render(); });
     });
 
     var addTxBtn = document.getElementById('addTxBtn');
@@ -935,6 +939,7 @@
         description: desc, baseAmount: base, markup: markup, createdAt: Date.now()
       });
       state.txNetwork = 'none';
+      state.txFormOpen = false;
       persist(); render();
     });
 
@@ -975,7 +980,7 @@
     });
 
     document.querySelectorAll('[data-entry-type]').forEach(function(el){
-      el.addEventListener('click', function(){ state.entryType = el.getAttribute('data-entry-type'); render(); });
+      el.addEventListener('click', function(){ state.entryType = el.getAttribute('data-entry-type'); state.entryFormOpen = true; render(); });
     });
     var addEntryBtn = document.getElementById('addEntryBtn');
     if(addEntryBtn) addEntryBtn.addEventListener('click', function(){
@@ -987,6 +992,7 @@
       state.accountEntries.push({
         id: uid(), network: state.activeAccount, type: state.entryType, description: desc, amount: amt, createdAt: Date.now()
       });
+      state.entryFormOpen = false;
       persist(); render();
     });
 
@@ -1112,7 +1118,7 @@
 
   // ---------- المصادقة (كلمة سر حقيقية عبر Firebase Auth + تذكّر لمدة 24 ساعة) ----------
   // *** غيّري هاد الإيميل ليطابق بالضبط الإيميل يلي عملتيه بـ Firebase Console > Authentication > Users ***
-  var APP_LOGIN_EMAIL = "abubaselalshahm@gmail.com";
+  var APP_LOGIN_EMAIL = "Abubaselalshahm@gmail.com";
   var REMEMBER_KEY = 'auth-remember-until';
   var REMEMBER_MS = 24 * 60 * 60 * 1000; // 24 ساعة. غيّري الرقم إذا بدك مدة تانية (مثلاً 7 * 24 * 60 * 60 * 1000 لأسبوع)
 
