@@ -371,6 +371,7 @@
     activeAccount: null,
     activeDay: null,
     daySearch: '',
+    dayIncomeCustomerId: null,
     drawerOpen: false,
     search: '',
     modal: null, // add-customer | edit-customer | edit-tx | edit-entry | settings | add-day-customer
@@ -405,6 +406,22 @@
     DAY_KEYS.forEach(function(k){
       if(!Array.isArray(state.dayAssignments[k])) state.dayAssignments[k] = [];
     });
+  }
+  function computeTodayIncomeForDay(dayKey){
+    var ids = state.dayAssignments[dayKey] || [];
+    var d = new Date(); d.setHours(0,0,0,0);
+    var startOfToday = d.getTime();
+    var total = 0;
+    var perCustomer = {};
+    state.transactions.forEach(function(t){
+      if(t.type !== 'in') return;
+      if(ids.indexOf(t.customerId) === -1) return;
+      if(t.createdAt < startOfToday) return;
+      var amt = txTotal(t);
+      total += amt;
+      perCustomer[t.customerId] = (perCustomer[t.customerId]||0) + amt;
+    });
+    return {total:total, perCustomer:perCustomer};
   }
   ensureDayAssignments();
 
@@ -735,6 +752,9 @@
     if(state.modal === 'add-day-customer'){
       app.insertAdjacentHTML('beforeend', renderAddDayCustomerSheet());
     }
+    if(state.modal === 'day-quick-income'){
+      app.insertAdjacentHTML('beforeend', renderDayIncomeSheet());
+    }
     if(state.modal === 'profit-rates'){
       app.insertAdjacentHTML('beforeend', renderProfitRatesSheet());
     }
@@ -886,10 +906,13 @@
   function renderDayDetail(){
     var day = DAYS.find(function(d){ return d.key === state.activeDay; }) || {label:''};
     var ids = state.dayAssignments[state.activeDay] || [];
+    var incomeReport = computeTodayIncomeForDay(state.activeDay);
     var html = '';
     html += '<div class="detail-header">';
     html += '  <div class="back-row"><button class="back-btn" id="backToDays">→ أيام اللمة</button></div>';
     html += '  <div class="detail-name">'+escapeHtml(day.label)+'</div>';
+    html += '  <div class="stat-label">إجمالي الوارد المحصّل اليوم</div>';
+    html += '  <div class="stat-value clear" style="font-size:26px;">'+fmt(incomeReport.total)+' <span class="unit">ل.س</span></div>';
     html += '</div>';
     html += '<div class="list" style="padding-top:16px;">';
     if(ids.length === 0){
@@ -897,14 +920,32 @@
     } else {
       ids.forEach(function(cid){
         var name = customerName(cid);
+        var collected = incomeReport.perCustomer[cid] || 0;
         html += '<div class="customer-card" data-day-customer="'+cid+'">';
-        html += '  <div class="customer-info"><div class="customer-name">'+escapeHtml(name)+'</div></div>';
-        html += '  <button class="link-btn danger" data-remove-day-customer="'+cid+'" style="padding:6px;">حذف</button>';
+        html += '  <div class="customer-info"><div class="customer-name">'+escapeHtml(name)+'</div>'+(collected>0?'<div style="font-size:11px;color:var(--credit);font-weight:700;">محصّل اليوم: '+fmt(collected)+' ل.س</div>':'')+'</div>';
+        html += '  <div style="display:flex;gap:10px;align-items:center;">';
+        html += '    <button class="link-btn" data-day-income="'+cid+'" style="padding:6px;color:var(--credit);">+ وارد</button>';
+        html += '    <button class="link-btn danger" data-remove-day-customer="'+cid+'" style="padding:6px;">حذف</button>';
+        html += '  </div>';
         html += '</div>';
       });
     }
     html += '</div>';
     html += '<div class="fab"><button class="btn btn-accent" id="openAddDayCustomer">+ إضافة زبون لليوم</button></div>';
+    return html;
+  }
+
+  function renderDayIncomeSheet(){
+    var name = customerName(state.dayIncomeCustomerId);
+    var html = '';
+    html += '<div class="overlay" id="overlay">';
+    html += '  <div class="sheet">';
+    html += '    <div class="sheet-title">تسجيل وارد من '+escapeHtml(name)+'</div>';
+    html += '    <div class="field"><label>المبلغ</label><input id="dayIncomeAmount" type="number" inputmode="numeric" placeholder="0" autofocus></div>';
+    html += '    <div class="field"><label>الوصف (اختياري)</label><input id="dayIncomeDesc" placeholder="وصف العملية"></div>';
+    html += '    <div class="sheet-actions"><button class="btn btn-ghost" id="cancelDayIncome">إلغاء</button><button class="btn btn-accent" id="saveDayIncome">حفظ الوارد</button></div>';
+    html += '  </div>';
+    html += '</div>';
     return html;
   }
 
@@ -1175,10 +1216,10 @@
     var html = '';
     html += '<div class="overlay" id="overlay">';
     html += '  <div class="sheet">';
-    html += '    <div class="sheet-title">نسب الأرباح لكل شبكة</div>';
-    html += '    <div class="sheet-text">حطي نسبة الربح % لكل شبكة. لما تختاري الشبكة وتكتبي المبلغ الأساسي بحركة جديدة، الزيادة رح تنحسب تلقائيًا حسب النسبة (وبتقدري تعدليها يدوي لأي حركة لحالها).</div>';
+    html += '    <div class="sheet-title">نسبة الكلفة لكل شبكة</div>';
+    html += '    <div class="sheet-text">حطي نسبة الفرق بين كلفتك الحقيقية والمبلغ الأساسي. لو كلفتك أغلى من المبلغ (متل MTN)، حطي رقم موجب (مثلاً 4.5). لو كلفتك أرخص من المبلغ (متل يلا جو)، حطي رقم سالب (مثلاً -1.6). التطبيق بيستخدمها بس بتقرير "الأرباح" لحساب ربحك الحقيقي = الزيادة يلي كتبتيها بالحركة ناقص (المبلغ الأساسي × النسبة)، وما بيغيّر شي بخانة الزيادة يلي بتكتبيها يدوي.</div>';
     NETWORK_GROUP.forEach(function(net){
-      html += '<div class="field"><label>'+NETWORKS[net].label+' (%)</label><input class="profit-rate-input" data-profit-rate-net="'+net+'" type="number" inputmode="decimal" value="'+(state.profitRates[net]||0)+'"></div>';
+      html += '<div class="field"><label>'+NETWORKS[net].label+' — نسبة الكلفة % (فيها تكون سالبة)</label><input class="profit-rate-input" data-profit-rate-net="'+net+'" type="number" step="0.1" inputmode="decimal" value="'+(state.profitRates[net]||0)+'"></div>';
     });
     html += '    <div class="sheet-actions"><button class="btn btn-ghost" id="cancelProfitRates">إلغاء</button><button class="btn btn-accent" id="saveProfitRates">حفظ النسب</button></div>';
     html += '  </div>';
@@ -1197,11 +1238,12 @@
     state.transactions.forEach(function(t){
       if(t.type !== 'out') return;
       if(cutoff !== null && t.createdAt < cutoff) return;
-      var markup = Number(t.markup||0);
-      if(markup <= 0) return;
-      total += markup;
       var net = t.network || 'none';
-      byNetwork[net] = (byNetwork[net]||0) + markup;
+      var costRate = Number(state.profitRates[net] || 0);
+      var profit = Number(t.markup||0) - Number(t.baseAmount||0) * (costRate/100);
+      if(profit === 0) return;
+      total += profit;
+      byNetwork[net] = (byNetwork[net]||0) + profit;
     });
     return {total:total, byNetwork:byNetwork};
   }
@@ -1218,10 +1260,10 @@
     html += '  </div>';
     html += '</div>';
     html += '<div class="list" style="padding-top:16px;">';
-    html += '<div class="account-card" style="cursor:default;"><div class="account-card-top"><div class="account-name">إجمالي الأرباح</div><div class="account-total" style="color:var(--credit);">'+fmt(report.total)+' ل.س</div></div></div>';
+    html += '<div class="account-card" style="cursor:default;"><div class="account-card-top"><div class="account-name">إجمالي الأرباح</div><div class="account-total" style="color:'+(report.total<0?'var(--debt)':'var(--credit)')+';">'+fmt(report.total)+' ل.س</div></div></div>';
     NETWORK_GROUP.forEach(function(net){
       var amt = report.byNetwork[net] || 0;
-      html += '<div class="account-card" style="cursor:default;"><div class="account-card-top"><div class="account-name">'+NETWORKS[net].label+'</div><div class="account-total" style="font-size:15px;">'+fmt(amt)+' ل.س</div></div></div>';
+      html += '<div class="account-card" style="cursor:default;"><div class="account-card-top"><div class="account-name">'+NETWORKS[net].label+'</div><div class="account-total" style="font-size:15px;color:'+(amt<0?'var(--debt)':'var(--ink)')+';">'+fmt(amt)+' ل.س</div></div></div>';
     });
     html += '</div>';
     return html;
@@ -1543,6 +1585,29 @@
         render();
       });
     });
+    document.querySelectorAll('[data-day-income]').forEach(function(el){
+      el.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        state.dayIncomeCustomerId = el.getAttribute('data-day-income');
+        state.modal = 'day-quick-income';
+        render();
+      });
+    });
+    var cancelDayIncome = document.getElementById('cancelDayIncome');
+    if(cancelDayIncome) cancelDayIncome.addEventListener('click', function(){ state.modal=null; render(); });
+    var saveDayIncome = document.getElementById('saveDayIncome');
+    if(saveDayIncome) saveDayIncome.addEventListener('click', function(){
+      var amtEl = document.getElementById('dayIncomeAmount');
+      var descEl = document.getElementById('dayIncomeDesc');
+      var amt = Number(amtEl.value);
+      if(!amt || amt <= 0){ amtEl.focus(); return; }
+      state.transactions.push({
+        id: uid(), customerId: state.dayIncomeCustomerId, type:'in', network:'none',
+        description: descEl.value.trim(), baseAmount: amt, markup:0, createdAt: Date.now()
+      });
+      state.modal = null;
+      persist(); render();
+    });
     document.querySelectorAll('[data-remove-day-customer]').forEach(function(el){
       el.addEventListener('click', function(ev){
         ev.stopPropagation();
@@ -1668,18 +1733,6 @@
       el.addEventListener('click', function(){ state.txNetwork = el.getAttribute('data-cat-select-edit'); render(); });
     });
 
-    var txBaseInput = document.getElementById('txBase');
-    if(txBaseInput){
-      txBaseInput.addEventListener('input', function(){
-        if(state.txType !== 'out') return;
-        var rate = Number(state.profitRates[state.txNetwork] || 0);
-        if(!rate) return;
-        var base = Number(txBaseInput.value) || 0;
-        var markupEl = document.getElementById('txMarkup');
-        if(markupEl) markupEl.value = Math.round(base * rate / 100);
-      });
-    }
-
     var addTxBtn = document.getElementById('addTxBtn');
     if(addTxBtn) addTxBtn.addEventListener('click', function(){
       var descEl = document.getElementById('txDesc');
@@ -1710,18 +1763,6 @@
     document.querySelectorAll('[data-edit-tx-type]').forEach(function(el){
       el.addEventListener('click', function(){ state.txType = el.getAttribute('data-edit-tx-type'); render(); });
     });
-
-    var editTxBaseInput = document.getElementById('editTxBase');
-    if(editTxBaseInput){
-      editTxBaseInput.addEventListener('input', function(){
-        if(state.txType !== 'out') return;
-        var rate = Number(state.profitRates[state.txNetwork] || 0);
-        if(!rate) return;
-        var base = Number(editTxBaseInput.value) || 0;
-        var markupEl = document.getElementById('editTxMarkup');
-        if(markupEl) markupEl.value = Math.round(base * rate / 100);
-      });
-    }
 
     var saveTxBtn = document.getElementById('saveTxBtn');
     if(saveTxBtn) saveTxBtn.addEventListener('click', function(){
