@@ -252,6 +252,7 @@
   .code-chip:active{ opacity:0.8; }
   .code-chip.chip-mtn{background:rgba(255,204,0,0.15); color:var(--mtn);}
   .code-chip.chip-syr{background:rgba(228,3,46,0.15); color:#F0705F;}
+  .chip-yalla{background:rgba(93,169,233,0.15); color:#5DA9E9;}
 
   /* شبكة اختيار التصنيف */
   .cat-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
@@ -339,14 +340,15 @@
     syriatel: {label:'سيريتل', chipClass:'chip-syr', tracked:true},
     fatura_mtn: {label:'فاتورة MTN', chipClass:'chip-fmtn', tracked:true},
     fatura_syriatel: {label:'فاتورة سيريتل', chipClass:'chip-fsyr', tracked:true},
+    yalla_go: {label:'يلا جو', chipClass:'chip-yalla', tracked:true},
     cash_mtn: {label:'كاش MTN', chipClass:'chip-cash', tracked:false},
     cash_syriatel: {label:'كاش سيريتل', chipClass:'chip-cash', tracked:false},
     sham_cash: {label:'شام كاش', chipClass:'chip-cash', tracked:false},
     usd: {label:'دولار', chipClass:'chip-usd', tracked:false},
     none: {label:'بدون تصنيف', chipClass:'', tracked:false}
   };
-  var ACCOUNT_ORDER = ['mtn','syriatel','fatura_mtn','fatura_syriatel'];
-  var NETWORK_GROUP = ['mtn','syriatel','fatura_mtn','fatura_syriatel'];
+  var ACCOUNT_ORDER = ['mtn','syriatel','fatura_mtn','fatura_syriatel','yalla_go'];
+  var NETWORK_GROUP = ['mtn','syriatel','fatura_mtn','fatura_syriatel','yalla_go'];
   var PAYMENT_GROUP = ['cash_mtn','cash_syriatel','sham_cash','usd'];
   var DAYS = [
     {key:'sunday', label:'الأحد'},
@@ -397,6 +399,37 @@
     });
   }
   ensureDayAssignments();
+
+  // ---------- سجل التنقل الداخلي (لجعل زر الرجوع بالموبايل يرجع لصفحة سابقة بدل ما يطلع من التطبيق) ----------
+  var UI_NAV_FIELDS = ['screen','activeCustomerId','activeAccount','activeDay','daySearch','drawerOpen','search',
+    'editingCustomerId','editingTxId','editingEntryId','txType','txNetwork','txFormOpen','entryType','entryFormOpen'];
+  var navStack = [];
+  function captureUIState(){
+    var snap = {};
+    UI_NAV_FIELDS.forEach(function(k){ snap[k] = state[k]; });
+    return snap;
+  }
+  function pushNavSnapshot(overrides){
+    var snap = captureUIState();
+    if(overrides) Object.keys(overrides).forEach(function(k){ snap[k] = overrides[k]; });
+    navStack.push(snap);
+    try{ history.pushState({navMarker:navStack.length}, '', location.href); }catch(e){}
+  }
+  function pushCurrentAsHistoryOnly(){
+    try{ history.pushState({}, '', location.href); }catch(e){}
+  }
+  window.addEventListener('popstate', function(){
+    // إذا في نافذة منبثقة أو قائمة أو تأكيد مفتوح، الرجوع بيسكرها بس وما بيغيّر الصفحة
+    if(state.modal){ state.modal = null; render(); pushCurrentAsHistoryOnly(); return; }
+    if(state.confirm){ state.confirm = null; render(); pushCurrentAsHistoryOnly(); return; }
+    if(state.drawerOpen){ state.drawerOpen = false; render(); pushCurrentAsHistoryOnly(); return; }
+    if(navStack.length){
+      var prev = navStack.pop();
+      Object.keys(prev).forEach(function(k){ state[k] = prev[k]; });
+      render();
+    }
+    // إذا ما في شي بالسجل، بيترك السلوك الافتراضي (يقفل التطبيق) - هيك طبيعي بالشاشة الرئيسية
+  });
 
   var CURRENCY_RATE = 100; // كم ل.س قديم = ل.س.ج واحد. غيّري الرقم هون لو تغيّر سعر الصرف الرسمي
 
@@ -614,7 +647,7 @@
     return '<span class="chip '+n.chipClass+'">'+n.label+'</span>';
   }
   var NETWORK_COLOR = {
-    mtn:'#FFCC00', syriatel:'#E4032E', fatura_mtn:'#FFCC00', fatura_syriatel:'#E4032E',
+    mtn:'#FFCC00', syriatel:'#E4032E', fatura_mtn:'#FFCC00', fatura_syriatel:'#E4032E', yalla_go:'#5DA9E9',
     cash_mtn:'#CB9152', cash_syriatel:'#CB9152', sham_cash:'#CB9152', usd:'#74BB8E', none:'#93A2A6'
   };
   function categoryGridHtml(selected, dataAttr){
@@ -748,8 +781,6 @@
     html += '<div class="header">';
     html += '  <div class="header-top"><div class="brand">Abu Basel Al Shahm'+syncBadge()+'</div><div style="display:flex;gap:8px;align-items:center;">'+currencyToggleBtn()+'<div class="icon-btn" id="openSettings" title="نسخة احتياطية">⚙</div>'+hamburgerBtn()+'</div></div>';
     html += statusLine();
-    html += '  <div class="stat-label">الحسابات الفرعية</div>';
-    html += '  <div class="stat-value" style="font-size:20px; color:var(--ink-dim); font-weight:600;">حسب كل شبكة وفاتورة</div>';
     html += renderTabs();
     html += '</div>';
     html += '<div class="list" style="padding-top:16px;">';
@@ -908,7 +939,7 @@
 
     var html = '';
     html += '<div class="detail-header">';
-    html += '  <div class="back-row"><button class="back-btn" id="backBtn">→ كل الزباين</button></div>';
+    html += '  <div class="back-row"><button class="back-btn" id="backBtn">→ رجوع</button></div>';
     html += '  <div class="detail-name">#'+customerNumber(c.id)+' — '+escapeHtml(c.name)+'</div>';
     html += '  <div class="detail-chips">';
     html += codeChipHtml(c, 'mtn');
@@ -1308,6 +1339,7 @@
 
     document.querySelectorAll('[data-tab]').forEach(function(el){
       el.addEventListener('click', function(){
+        pushNavSnapshot();
         state.screen = el.getAttribute('data-tab') === 'accounts' ? 'accounts-list' : 'customers-list';
         render();
       });
@@ -1316,7 +1348,11 @@
     var searchInput = document.getElementById('searchInput');
     if(searchInput){
       searchInput.addEventListener('input', function(e){
-        state.search = e.target.value;
+        var newVal = e.target.value;
+        if(state.search === '' && newVal !== ''){
+          pushNavSnapshot();
+        }
+        state.search = newVal;
         var pos = e.target.selectionStart;
         render();
         var again = document.getElementById('searchInput');
@@ -1325,13 +1361,13 @@
     }
 
     var openAdd = document.getElementById('openAddCustomer');
-    if(openAdd) openAdd.addEventListener('click', function(){ state.modal='add-customer'; render(); });
+    if(openAdd) openAdd.addEventListener('click', function(){ pushNavSnapshot(); state.modal='add-customer'; render(); });
 
     var openSettings = document.getElementById('openSettings');
-    if(openSettings) openSettings.addEventListener('click', function(){ state.modal='settings'; render(); });
+    if(openSettings) openSettings.addEventListener('click', function(){ pushNavSnapshot(); state.modal='settings'; render(); });
 
     var openCalc = document.getElementById('openCalc');
-    if(openCalc) openCalc.addEventListener('click', function(){ state.modal='calculator'; render(); });
+    if(openCalc) openCalc.addEventListener('click', function(){ pushNavSnapshot(); state.modal='calculator'; render(); });
     var closeCalc = document.getElementById('closeCalc');
     if(closeCalc) closeCalc.addEventListener('click', function(){ state.modal=null; render(); });
     document.querySelectorAll('[data-calc]').forEach(function(el){
@@ -1345,12 +1381,13 @@
     });
 
     var openMenu = document.getElementById('openMenu');
-    if(openMenu) openMenu.addEventListener('click', function(){ state.drawerOpen = true; render(); });
+    if(openMenu) openMenu.addEventListener('click', function(){ pushNavSnapshot({drawerOpen:false}); state.drawerOpen = true; render(); });
     var drawerOverlay = document.getElementById('drawerOverlay');
     if(drawerOverlay) drawerOverlay.addEventListener('click', function(){ state.drawerOpen = false; render(); });
     document.querySelectorAll('[data-drawer-nav]').forEach(function(el){
       el.addEventListener('click', function(){
         var nav = el.getAttribute('data-drawer-nav');
+        pushNavSnapshot({drawerOpen:false});
         state.drawerOpen = false;
         if(nav === 'customers') state.screen = 'customers-list';
         else if(nav === 'accounts') state.screen = 'accounts-list';
@@ -1361,13 +1398,14 @@
 
     document.querySelectorAll('[data-open-day]').forEach(function(el){
       el.addEventListener('click', function(){
+        pushNavSnapshot();
         state.activeDay = el.getAttribute('data-open-day');
         state.screen = 'day-detail';
         render();
       });
     });
     var backToDays = document.getElementById('backToDays');
-    if(backToDays) backToDays.addEventListener('click', function(){ state.screen='days-list'; state.activeDay=null; render(); });
+    if(backToDays) backToDays.addEventListener('click', function(){ history.back(); });
 
     var openAddDayCustomer = document.getElementById('openAddDayCustomer');
     if(openAddDayCustomer) openAddDayCustomer.addEventListener('click', function(){ state.modal='add-day-customer'; state.daySearch=''; render(); });
@@ -1400,6 +1438,7 @@
 
     document.querySelectorAll('[data-day-customer]').forEach(function(el){
       el.addEventListener('click', function(){
+        pushNavSnapshot();
         state.activeCustomerId = el.getAttribute('data-day-customer');
         state.screen = 'customer-detail';
         render();
@@ -1417,6 +1456,7 @@
 
     document.querySelectorAll('[data-open]').forEach(function(el){
       el.addEventListener('click', function(){
+        pushNavSnapshot();
         state.activeCustomerId = el.getAttribute('data-open');
         state.screen = 'customer-detail';
         state.txType = 'out'; state.txNetwork = 'none'; state.txFormOpen = false;
@@ -1426,6 +1466,7 @@
 
     document.querySelectorAll('[data-open-account]').forEach(function(el){
       el.addEventListener('click', function(){
+        pushNavSnapshot();
         state.activeAccount = el.getAttribute('data-open-account');
         state.screen = 'account-detail';
         state.entryType = 'out'; state.entryFormOpen = false;
@@ -1435,6 +1476,7 @@
 
     document.querySelectorAll('[data-goto-customer]').forEach(function(el){
       el.addEventListener('click', function(){
+        pushNavSnapshot();
         state.activeCustomerId = el.getAttribute('data-goto-customer');
         state.screen = 'customer-detail';
         render();
@@ -1442,9 +1484,9 @@
     });
 
     var backBtn = document.getElementById('backBtn');
-    if(backBtn) backBtn.addEventListener('click', function(){ state.screen='customers-list'; state.activeCustomerId=null; render(); });
+    if(backBtn) backBtn.addEventListener('click', function(){ history.back(); });
     var backToAccounts = document.getElementById('backToAccounts');
-    if(backToAccounts) backToAccounts.addEventListener('click', function(){ state.screen='accounts-list'; state.activeAccount=null; render(); });
+    if(backToAccounts) backToAccounts.addEventListener('click', function(){ history.back(); });
 
     var openCustomerMenu = document.getElementById('openCustomerMenu');
     if(openCustomerMenu) openCustomerMenu.addEventListener('click', function(){ state.modal='customer-menu'; render(); });
@@ -1758,6 +1800,7 @@
       }
       document.getElementById('passGate').style.display = 'none';
       if(!state.loaded){
+        try{ history.replaceState({navMarker:0}, '', location.href); }catch(e){}
         load();
         trackPresence();
         trackInstalls();
