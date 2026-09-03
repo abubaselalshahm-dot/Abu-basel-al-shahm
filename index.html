@@ -390,8 +390,16 @@
     currencyMode: 'old', // old = ل.س (القديمة) | new = ل.س.ج (الجديدة)
     revealedChips: {},
     calc: { display: '0', prev: null, op: null, waitingNew: false },
-    selectedStatementTxIds: []
+    selectedStatementTxIds: [],
+    profitRates: {},
+    profitPeriod: 'all'
   };
+
+  function ensureProfitRates(){
+    NETWORK_GROUP.forEach(function(k){
+      if(typeof state.profitRates[k] !== 'number') state.profitRates[k] = 0;
+    });
+  }
 
   function ensureDayAssignments(){
     DAY_KEYS.forEach(function(k){
@@ -460,6 +468,7 @@
         transactions: state.transactions,
         accountEntries: state.accountEntries,
         dayAssignments: state.dayAssignments,
+        profitRates: state.profitRates,
         pendingSync: state.pendingSync
       }));
     }catch(e){ console.error('local cache save failed', e); }
@@ -475,6 +484,8 @@
         state.accountEntries = data.accountEntries || [];
         state.dayAssignments = data.dayAssignments || {};
         ensureDayAssignments();
+        state.profitRates = data.profitRates || {};
+        ensureProfitRates();
         state.pendingSync = !!data.pendingSync;
         return true;
       }
@@ -489,6 +500,7 @@
       transactions: state.transactions,
       accountEntries: state.accountEntries,
       dayAssignments: state.dayAssignments,
+      profitRates: state.profitRates,
       updatedAt: Date.now()
     }).then(function(){
       state.pendingSync = false;
@@ -535,6 +547,8 @@
         state.accountEntries = data.accountEntries || [];
         state.dayAssignments = data.dayAssignments || {};
         ensureDayAssignments();
+        state.profitRates = data.profitRates || {};
+        ensureProfitRates();
       }
       saveLocalCache();
       render();
@@ -689,6 +703,7 @@
     else if(state.screen === 'account-detail') html = renderAccountDetail();
     else if(state.screen === 'days-list') html = renderDaysList();
     else if(state.screen === 'day-detail') html = renderDayDetail();
+    else if(state.screen === 'profit-report') html = renderProfitReport();
     else html = renderCustomersList();
 
     app.innerHTML = html;
@@ -719,6 +734,9 @@
     }
     if(state.modal === 'add-day-customer'){
       app.insertAdjacentHTML('beforeend', renderAddDayCustomerSheet());
+    }
+    if(state.modal === 'profit-rates'){
+      app.insertAdjacentHTML('beforeend', renderProfitRatesSheet());
     }
     if(state.confirm){
       app.insertAdjacentHTML('beforeend', renderConfirmSheet());
@@ -926,6 +944,7 @@
     html += '  <div class="drawer-item'+(state.screen==='customers-list'?' active':'')+'" data-drawer-nav="customers">الزباين</div>';
     html += '  <div class="drawer-item'+((state.screen==='accounts-list'||state.screen==='account-detail')?' active':'')+'" data-drawer-nav="accounts">الحسابات الفرعية</div>';
     html += '  <div class="drawer-item'+((state.screen==='days-list'||state.screen==='day-detail')?' active':'')+'" data-drawer-nav="days">أيام اللمة</div>';
+    html += '  <div class="drawer-item'+(state.screen==='profit-report'?' active':'')+'" data-drawer-nav="profit">الأرباح</div>';
     html += '</div>';
     return html;
   }
@@ -1152,6 +1171,62 @@
     }
   }
 
+  function renderProfitRatesSheet(){
+    var html = '';
+    html += '<div class="overlay" id="overlay">';
+    html += '  <div class="sheet">';
+    html += '    <div class="sheet-title">نسب الأرباح لكل شبكة</div>';
+    html += '    <div class="sheet-text">حطي نسبة الربح % لكل شبكة. لما تختاري الشبكة وتكتبي المبلغ الأساسي بحركة جديدة، الزيادة رح تنحسب تلقائيًا حسب النسبة (وبتقدري تعدليها يدوي لأي حركة لحالها).</div>';
+    NETWORK_GROUP.forEach(function(net){
+      html += '<div class="field"><label>'+NETWORKS[net].label+' (%)</label><input class="profit-rate-input" data-profit-rate-net="'+net+'" type="number" inputmode="decimal" value="'+(state.profitRates[net]||0)+'"></div>';
+    });
+    html += '    <div class="sheet-actions"><button class="btn btn-ghost" id="cancelProfitRates">إلغاء</button><button class="btn btn-accent" id="saveProfitRates">حفظ النسب</button></div>';
+    html += '  </div>';
+    html += '</div>';
+    return html;
+  }
+
+  function computeProfitReport(){
+    var now = Date.now();
+    var cutoff = null;
+    if(state.profitPeriod === 'today') cutoff = now - 24*60*60*1000;
+    else if(state.profitPeriod === 'week') cutoff = now - 7*24*60*60*1000;
+    else if(state.profitPeriod === 'month') cutoff = now - 30*24*60*60*1000;
+    var byNetwork = {};
+    var total = 0;
+    state.transactions.forEach(function(t){
+      if(t.type !== 'out') return;
+      if(cutoff !== null && t.createdAt < cutoff) return;
+      var markup = Number(t.markup||0);
+      if(markup <= 0) return;
+      total += markup;
+      var net = t.network || 'none';
+      byNetwork[net] = (byNetwork[net]||0) + markup;
+    });
+    return {total:total, byNetwork:byNetwork};
+  }
+
+  function renderProfitReport(){
+    var report = computeProfitReport();
+    var html = '';
+    html += '<div class="header">';
+    html += '  <div class="header-top"><div class="brand">الأرباح</div>'+hamburgerBtn()+'</div>';
+    html += '  <div class="tabs" style="margin-top:14px;">';
+    [['all','الكل'],['today','اليوم'],['week','أسبوع'],['month','شهر']].forEach(function(p){
+      html += '<div class="tab '+(state.profitPeriod===p[0]?'active':'')+'" data-profit-period="'+p[0]+'">'+p[1]+'</div>';
+    });
+    html += '  </div>';
+    html += '</div>';
+    html += '<div class="list" style="padding-top:16px;">';
+    html += '<div class="account-card" style="cursor:default;"><div class="account-card-top"><div class="account-name">إجمالي الأرباح</div><div class="account-total" style="color:var(--credit);">'+fmt(report.total)+' ل.س</div></div></div>';
+    NETWORK_GROUP.forEach(function(net){
+      var amt = report.byNetwork[net] || 0;
+      html += '<div class="account-card" style="cursor:default;"><div class="account-card-top"><div class="account-name">'+NETWORKS[net].label+'</div><div class="account-total" style="font-size:15px;">'+fmt(amt)+' ل.س</div></div></div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
   function renderSettingsSheet(){
     var html = '';
     html += '<div class="overlay" id="overlay">';
@@ -1164,6 +1239,7 @@
     html += '      <input type="file" id="importFileInput" accept="application/json" style="display:none">';
     html += '    </div>';
     html += '    <div class="sheet-actions"><button class="btn btn-ghost" id="closeSettings">إغلاق</button></div>';
+    html += '    <div class="sheet-actions" style="margin-top:6px;"><button class="btn btn-ghost" id="openProfitRates">نسب الأرباح</button></div>';
     html += '    <div class="sheet-actions" style="margin-top:6px;"><button class="btn btn-ghost" id="logoutBtn">تسجيل خروج</button></div>';
     html += '  </div>';
     html += '</div>';
@@ -1313,7 +1389,7 @@
   }
 
   function exportBackup(){
-    var data = { customers: state.customers, transactions: state.transactions, accountEntries: state.accountEntries, dayAssignments: state.dayAssignments, exportedAt: new Date().toISOString() };
+    var data = { customers: state.customers, transactions: state.transactions, accountEntries: state.accountEntries, dayAssignments: state.dayAssignments, profitRates: state.profitRates, exportedAt: new Date().toISOString() };
     var blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
@@ -1366,6 +1442,28 @@
     var openSettings = document.getElementById('openSettings');
     if(openSettings) openSettings.addEventListener('click', function(){ pushNavSnapshot(); state.modal='settings'; render(); });
 
+    document.querySelectorAll('[data-profit-period]').forEach(function(el){
+      el.addEventListener('click', function(){
+        state.profitPeriod = el.getAttribute('data-profit-period');
+        render();
+      });
+    });
+
+    var openProfitRates = document.getElementById('openProfitRates');
+    if(openProfitRates) openProfitRates.addEventListener('click', function(){ state.modal='profit-rates'; render(); });
+    var cancelProfitRates = document.getElementById('cancelProfitRates');
+    if(cancelProfitRates) cancelProfitRates.addEventListener('click', function(){ state.modal=null; render(); });
+    var saveProfitRates = document.getElementById('saveProfitRates');
+    if(saveProfitRates) saveProfitRates.addEventListener('click', function(){
+      document.querySelectorAll('[data-profit-rate-net]').forEach(function(el){
+        var net = el.getAttribute('data-profit-rate-net');
+        state.profitRates[net] = Number(el.value) || 0;
+      });
+      state.modal = null;
+      persist();
+      render();
+    });
+
     var openCalc = document.getElementById('openCalc');
     if(openCalc) openCalc.addEventListener('click', function(){ pushNavSnapshot(); state.modal='calculator'; render(); });
     var closeCalc = document.getElementById('closeCalc');
@@ -1392,6 +1490,7 @@
         if(nav === 'customers') state.screen = 'customers-list';
         else if(nav === 'accounts') state.screen = 'accounts-list';
         else if(nav === 'days') state.screen = 'days-list';
+        else if(nav === 'profit') state.screen = 'profit-report';
         render();
       });
     });
@@ -1569,6 +1668,18 @@
       el.addEventListener('click', function(){ state.txNetwork = el.getAttribute('data-cat-select-edit'); render(); });
     });
 
+    var txBaseInput = document.getElementById('txBase');
+    if(txBaseInput){
+      txBaseInput.addEventListener('input', function(){
+        if(state.txType !== 'out') return;
+        var rate = Number(state.profitRates[state.txNetwork] || 0);
+        if(!rate) return;
+        var base = Number(txBaseInput.value) || 0;
+        var markupEl = document.getElementById('txMarkup');
+        if(markupEl) markupEl.value = Math.round(base * rate / 100);
+      });
+    }
+
     var addTxBtn = document.getElementById('addTxBtn');
     if(addTxBtn) addTxBtn.addEventListener('click', function(){
       var descEl = document.getElementById('txDesc');
@@ -1599,6 +1710,18 @@
     document.querySelectorAll('[data-edit-tx-type]').forEach(function(el){
       el.addEventListener('click', function(){ state.txType = el.getAttribute('data-edit-tx-type'); render(); });
     });
+
+    var editTxBaseInput = document.getElementById('editTxBase');
+    if(editTxBaseInput){
+      editTxBaseInput.addEventListener('input', function(){
+        if(state.txType !== 'out') return;
+        var rate = Number(state.profitRates[state.txNetwork] || 0);
+        if(!rate) return;
+        var base = Number(editTxBaseInput.value) || 0;
+        var markupEl = document.getElementById('editTxMarkup');
+        if(markupEl) markupEl.value = Math.round(base * rate / 100);
+      });
+    }
 
     var saveTxBtn = document.getElementById('saveTxBtn');
     if(saveTxBtn) saveTxBtn.addEventListener('click', function(){
@@ -1724,6 +1847,7 @@
             }
             data.accountEntries = data.accountEntries || [];
             data.dayAssignments = data.dayAssignments || {};
+            data.profitRates = data.profitRates || {};
             state.confirm = {message:'استيراد هالنسخة رح يستبدل كل البيانات الحالية. متابعة؟', type:'import-backup', payload:data};
             render();
           }catch(err){ alert('تعذّر قراءة الملف. تأكد إنو ملف JSON صحيح.'); }
@@ -1757,6 +1881,8 @@
         state.accountEntries = conf.payload.accountEntries || [];
         state.dayAssignments = conf.payload.dayAssignments || {};
         ensureDayAssignments();
+        state.profitRates = conf.payload.profitRates || {};
+        ensureProfitRates();
         state.modal = null;
         persist();
       }
