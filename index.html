@@ -312,7 +312,7 @@
   <input id="passInput" type="password" placeholder="كلمة السر" autocomplete="current-password" style="background:#1A2328;border:1px solid rgba(236,232,223,0.09);border-radius:10px;padding:12px 16px;color:#ECE8DF;font-size:15px;width:220px;text-align:center;">
   <button id="passSubmit" style="background:#CB9152;color:#1A1206;border:none;border-radius:10px;padding:12px 24px;font-weight:700;font-size:14px;cursor:pointer;width:220px;">دخول</button>
   <div id="passError" style="color:#D5654E;font-size:13px;display:none;">كلمة السر غلط</div>
-  <div id="toggleAuthMode" style="color:#93A2A6;font-size:13px;cursor:pointer;text-decoration:underline;">ما عندك حساب؟ سجّل واحد جديد</div>
+  <div id="toggleAuthMode" style="color:#93A2A6;font-size:13px;cursor:pointer;text-decoration:underline;padding:10px 16px;-webkit-user-select:none;-webkit-touch-callout:none;user-select:none;">ما عندك حساب؟ سجّل واحد جديد</div>
 </div>
 
 <div id="app" class="app"><div class="loading">جارِ التحميل…</div></div>
@@ -2020,8 +2020,4 @@
       dbRef = null;
       state.loaded = false;
       document.getElementById('passGate').style.display = 'flex';
-    }
-  });
-
-  function trackPresence(){
-    var uidVal = firebase.auth().currentUser.ui
+ 
