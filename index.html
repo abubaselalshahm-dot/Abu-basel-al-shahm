@@ -306,13 +306,13 @@
 </head>
 <body>
 
-<div id="passGate" style="position:fixed;inset:0;background:#121A1E;z-index:999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;font-family:'IBM Plex Sans Arabic',sans-serif;">
-  <div id="passGateTitle" style="color:#ECE8DF;font-size:16px;font-weight:700;">تسجيل الدخول</div>
-  <input id="emailInput" type="email" placeholder="الإيميل" autocomplete="username" style="background:#1A2328;border:1px solid rgba(236,232,223,0.09);border-radius:10px;padding:12px 16px;color:#ECE8DF;font-size:15px;width:220px;text-align:center;">
-  <input id="passInput" type="password" placeholder="كلمة السر" autocomplete="current-password" style="background:#1A2328;border:1px solid rgba(236,232,223,0.09);border-radius:10px;padding:12px 16px;color:#ECE8DF;font-size:15px;width:220px;text-align:center;">
-  <button id="passSubmit" style="background:#CB9152;color:#1A1206;border:none;border-radius:10px;padding:12px 24px;font-weight:700;font-size:14px;cursor:pointer;width:220px;">دخول</button>
-  <div id="passError" style="color:#D5654E;font-size:13px;display:none;">كلمة السر غلط</div>
-  <div id="toggleAuthMode" style="color:#93A2A6;font-size:13px;cursor:pointer;text-decoration:underline;padding:10px 16px;-webkit-user-select:none;-webkit-touch-callout:none;user-select:none;">ما عندك حساب؟ سجّل واحد جديد</div>
+<div id="passGate" style="position:fixed;inset:0;background:#121A1E;z-index:999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;font-family:'IBM Plex Sans Arabic',sans-serif;padding:20px;text-align:center;">
+  <div style="color:#ECE8DF;font-size:20px;font-weight:800;">Abu Basel Al Shahm</div>
+  <div style="color:#93A2A6;font-size:14px;">سجّلي الدخول بحساب Google للمتابعة</div>
+  <button id="googleSignInBtn" style="background:#ECE8DF;color:#1A1206;border:none;border-radius:10px;padding:13px 28px;font-weight:700;font-size:15px;cursor:pointer;display:flex;align-items:center;gap:10px;font-family:inherit;">
+    <span style="font-weight:800;font-size:17px;">G</span> تسجيل الدخول بحساب Google
+  </button>
+  <div id="passError" style="color:#D5654E;font-size:13px;display:none;">صار خطأ بتسجيل الدخول، جربي مرة تانية</div>
 </div>
 
 <div id="app" class="app"><div class="loading">جارِ التحميل…</div></div>
@@ -331,7 +331,7 @@
     messagingSenderId: "800069340051",
     appId: "1:800069340051:web:25732cf869a8efc22f3666"
   };
-  var dbRef = null; // بينحدد لكل مستخدم بعد تسجيل الدخول (users/{uid}/ledger-data)
+  var dbRef = null;
   try{
     firebase.initializeApp(firebaseConfig);
   }catch(e){ console.error('firebase init failed', e); }
@@ -477,15 +477,11 @@
   }
   function txTotal(t){ return Number(t.baseAmount||0) + Number(t.markup||0); }
 
-  var LOCAL_KEY_BASE = 'ledger-local-cache-v1';
-  function localKey(){
-    var u = firebase.auth().currentUser;
-    return u ? (LOCAL_KEY_BASE + '-' + u.uid) : LOCAL_KEY_BASE;
-  }
+  var LOCAL_KEY = 'ledger-local-cache-v1';
 
   function saveLocalCache(){
     try{
-      localStorage.setItem(localKey(), JSON.stringify({
+      localStorage.setItem(LOCAL_KEY, JSON.stringify({
         customers: state.customers,
         transactions: state.transactions,
         accountEntries: state.accountEntries,
@@ -496,20 +492,9 @@
     }catch(e){ console.error('local cache save failed', e); }
   }
 
-  function resetState(){
-    state.customers = [];
-    state.transactions = [];
-    state.accountEntries = [];
-    state.dayAssignments = {};
-    ensureDayAssignments();
-    state.profitRates = {};
-    ensureProfitRates();
-    state.pendingSync = false;
-  }
-
   function loadLocalCache(){
     try{
-      var raw = localStorage.getItem(localKey());
+      var raw = localStorage.getItem(LOCAL_KEY);
       if(raw){
         var data = JSON.parse(raw);
         state.customers = data.customers || [];
@@ -1863,7 +1848,6 @@
 
     var logoutBtn = document.getElementById('logoutBtn');
     if(logoutBtn) logoutBtn.addEventListener('click', function(){
-      localStorage.removeItem(REMEMBER_KEY);
       firebase.auth().signOut();
     });
 
@@ -1950,74 +1934,69 @@
     if(confirmNo) confirmNo.addEventListener('click', function(){ state.confirm = null; render(); });
   }
 
-  // ---------- المصادقة (كل مستخدم إلو حساب مستقل عبر Firebase Auth + تذكّر لمدة 24 ساعة) ----------
-  var REMEMBER_KEY = 'auth-remember-until';
-  var REMEMBER_MS = 24 * 60 * 60 * 1000; // 24 ساعة. غيّري الرقم إذا بدك مدة تانية (مثلاً 7 * 24 * 60 * 60 * 1000 لأسبوع)
-  var authMode = 'login'; // login | signup
-
-  var passSubmitBtn = document.getElementById('passSubmit');
-  var passInputEl = document.getElementById('passInput');
-  var emailInputEl = document.getElementById('emailInput');
-  var toggleAuthEl = document.getElementById('toggleAuthMode');
-  if(passSubmitBtn) passSubmitBtn.addEventListener('click', submitAuth);
-  if(passInputEl) passInputEl.addEventListener('keydown', function(e){ if(e.key==='Enter') submitAuth(); });
-  if(emailInputEl) emailInputEl.addEventListener('keydown', function(e){ if(e.key==='Enter') submitAuth(); });
-  if(toggleAuthEl) toggleAuthEl.addEventListener('click', function(){
-    authMode = (authMode === 'login') ? 'signup' : 'login';
-    document.getElementById('passGateTitle').textContent = (authMode === 'login') ? 'تسجيل الدخول' : 'حساب جديد';
-    passSubmitBtn.textContent = (authMode === 'login') ? 'دخول' : 'إنشاء الحساب';
-    toggleAuthEl.textContent = (authMode === 'login') ? 'ما عندك حساب؟ سجّل واحد جديد' : 'عندك حساب؟ سجّل دخول';
+  // ---------- المصادقة (تسجيل دخول Google، كل مستخدم بحسابه وبياناته الخاصة) ----------
+  var googleSignInBtn = document.getElementById('googleSignInBtn');
+  if(googleSignInBtn) googleSignInBtn.addEventListener('click', function(){
     document.getElementById('passError').style.display = 'none';
-  });
-
-  function submitAuth(){
-    var email = document.getElementById('emailInput').value.trim();
-    var val = document.getElementById('passInput').value;
-    var errEl = document.getElementById('passError');
-    errEl.style.display = 'none';
-    if(!email || !val){
-      errEl.textContent = 'عبّي الإيميل وكلمة السر';
-      errEl.style.display = 'block';
-      return;
-    }
-    var action = (authMode === 'login')
-      ? firebase.auth().signInWithEmailAndPassword(email, val)
-      : firebase.auth().createUserWithEmailAndPassword(email, val);
-    action.then(function(){
-      localStorage.setItem(REMEMBER_KEY, String(Date.now() + REMEMBER_MS));
-    }).catch(function(e){
-      console.error(e);
-      var msgs = {
-        'auth/wrong-password': 'كلمة السر غلط',
-        'auth/user-not-found': 'ما في حساب بهيدا الإيميل',
-        'auth/invalid-email': 'الإيميل مش صحيح',
-        'auth/email-already-in-use': 'في حساب موجود بهيدا الإيميل، جرّب تسجيل دخول',
-        'auth/weak-password': 'كلمة السر لازم ٦ محارف عالأقل'
-      };
-      errEl.textContent = msgs[e.code] || 'صار خطأ، جرّب كمان مرة';
-      errEl.style.display = 'block';
+    var provider = new firebase.auth.GoogleAuthProvider();
+    firebase.auth().signInWithRedirect(provider).catch(function(e){
+      console.error('sign-in redirect failed', e);
+      document.getElementById('passError').style.display = 'block';
     });
-  }
+  });
+  firebase.auth().getRedirectResult().catch(function(e){
+    console.error('redirect result error', e);
+    var errEl = document.getElementById('passError');
+    if(errEl){ errEl.style.display = 'block'; }
+  });
 
   firebase.auth().onAuthStateChanged(function(user){
     if(user){
-      var until = Number(localStorage.getItem(REMEMBER_KEY) || 0);
-      if(Date.now() > until){
-        // انتهت مدة الـ 24 ساعة، لازم كلمة السر من جديد
-        firebase.auth().signOut();
-        return;
-      }
-      document.getElementById('passGate').style.display = 'none';
       dbRef = firebase.database().ref('users/' + user.uid + '/ledger-data');
+      document.getElementById('passGate').style.display = 'none';
       if(!state.loaded){
-        resetState();
         try{ history.replaceState({navMarker:0}, '', location.href); }catch(e){}
         load();
         trackPresence();
         trackInstalls();
       }
     } else {
-      dbRef = null;
-      state.loaded = false;
       document.getElementById('passGate').style.display = 'flex';
- 
+    }
+  });
+
+  function trackPresence(){
+    var uidVal = firebase.auth().currentUser.uid;
+    var sessionRef = firebase.database().ref('users/' + uidVal + '/presence').push();
+    firebase.database().ref('.info/connected').on('value', function(snap){
+      if(snap.val() === true){
+        sessionRef.onDisconnect().remove();
+        sessionRef.set(true);
+      }
+    });
+    firebase.database().ref('users/' + uidVal + '/presence').on('value', function(snap){
+      state.onlineCount = snap.numChildren();
+      render();
+    });
+  }
+
+  function trackInstalls(){
+    var uidVal = firebase.auth().currentUser.uid;
+    firebase.database().ref('users/' + uidVal + '/installs').on('value', function(snap){
+      state.installCount = snap.numChildren();
+      render();
+    });
+    window.addEventListener('appinstalled', function(){
+      firebase.database().ref('users/' + uidVal + '/installs').push(true);
+    });
+  }
+
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('sw.js').catch(function(e){ console.error('sw register failed', e); });
+    });
+  }
+})();
+</script>
+</body>
+</html>
