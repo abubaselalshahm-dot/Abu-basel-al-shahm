@@ -1945,11 +1945,15 @@
 
   var googleSignInBtn = document.getElementById('googleSignInBtn');
   if(googleSignInBtn) googleSignInBtn.addEventListener('click', function(){
+    alert('DEBUG 1: تم الضغط على الزر');
     document.getElementById('passError').style.display = 'none';
     var provider = new firebase.auth.GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
-    firebase.auth().signInWithPopup(provider).catch(function(e){
-      console.error('sign-in popup failed', e);
+    alert('DEBUG 2: قبل استدعاء تسجيل الدخول');
+    firebase.auth().signInWithPopup(provider).then(function(result){
+      alert('DEBUG 3: نجح الدخول - ' + (result.user ? result.user.email : 'بدون بريد'));
+    }).catch(function(e){
+      alert('DEBUG 4: صار خطأ - ' + e.code + ' - ' + e.message);
       var errEl = document.getElementById('passError');
       errEl.textContent = 'خطأ: ' + e.code + ' — ' + e.message;
       errEl.style.display = 'block';
@@ -2042,9 +2046,4 @@
 
   function trackInstalls(){
     var uidVal = firebase.auth().currentUser.uid;
-    currentInstallsRef = firebase.database().ref('users/' + uidVal + '/installs');
-    currentInstallsRef.on('value', function(snap){
-      state.installCount = snap.numChildren();
-      render();
-    });
-    window.addEventListener('appinstalled', function(){
+    currentInstallsRef = firebase.d
