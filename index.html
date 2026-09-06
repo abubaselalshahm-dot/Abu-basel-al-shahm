@@ -477,7 +477,7 @@
   }
   function txTotal(t){ return Number(t.baseAmount||0) + Number(t.markup||0); }
 
-  var LOCAL_KEY = 'ledger-local-cache-v1';
+  var LOCAL_KEY = 'ledger-local-cache-v1'; // بيتغير ليصير خاص بكل حساب لما يسجل دخوله (شوفي onAuthStateChanged)
 
   function saveLocalCache(){
     try{
@@ -1941,6 +1941,7 @@
   if(googleSignInBtn) googleSignInBtn.addEventListener('click', function(){
     document.getElementById('passError').style.display = 'none';
     var provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
     firebase.auth().signInWithPopup(provider).catch(function(e){
       console.error('sign-in popup failed', e);
       document.getElementById('passError').style.display = 'block';
@@ -1950,6 +1951,7 @@
   firebase.auth().onAuthStateChanged(function(user){
     if(user){
       dbRef = firebase.database().ref('users/' + user.uid + '/ledger-data');
+      LOCAL_KEY = 'ledger-local-cache-v1-' + user.uid;
       document.getElementById('passGate').style.display = 'none';
       if(!state.loaded){
         try{ history.replaceState({navMarker:0}, '', location.href); }catch(e){}
