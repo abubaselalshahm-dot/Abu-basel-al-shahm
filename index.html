@@ -308,7 +308,7 @@
 
 <div id="passGate" style="position:fixed;inset:0;background:#121A1E;z-index:999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;font-family:'IBM Plex Sans Arabic',sans-serif;padding:20px;text-align:center;">
   <div style="color:#ECE8DF;font-size:20px;font-weight:800;">Abu Basel Al Shahm</div>
-  <div style="color:#93A2A6;font-size:14px;">سجّلي الدخول بحساب Google للمتابعة</div>
+  <div style="color:#93A2A6;font-size:14px;">سجّل الدخول بحساب Google للمتابعة</div>
   <button id="googleSignInBtn" style="background:#ECE8DF;color:#1A1206;border:none;border-radius:10px;padding:13px 28px;font-weight:700;font-size:15px;cursor:pointer;display:flex;align-items:center;gap:10px;font-family:inherit;">
     <span style="font-weight:800;font-size:17px;">G</span> تسجيل الدخول بحساب Google
   </button>
@@ -547,13 +547,15 @@
 
     if(!dbRef) return;
 
-    firebase.database().ref('.info/connected').on('value', function(snap){
+    currentConnectedRef = firebase.database().ref('.info/connected');
+    currentConnectedRef.on('value', function(snap){
       var online = snap.val() === true;
       if(online && state.pendingSync){
         pushToFirebase();
       }
     });
 
+    currentDbRef = dbRef;
     dbRef.on('value', function(snapshot){
       // إذا في تعديلات محلية لسا ما ترفعت، ما منستبدلها ببيانات
       // السيرفر القديمة، لحد ما ترفع تعديلاتنا أول.
@@ -961,7 +963,7 @@
     var html = '';
     html += '<div class="overlay" id="overlay">';
     html += '  <div class="sheet">';
-    html += '    <div class="sheet-title">اختاري زبون</div>';
+    html += '    <div class="sheet-title">اختر زبون</div>';
     html += '    <div class="field"><input id="daySearchInput" placeholder="بحث بالاسم…" value="'+escapeHtml(state.daySearch||'')+'"></div>';
     html += '    <div style="max-height:50vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px;">';
     if(list.length === 0){
@@ -1326,7 +1328,7 @@
     var html = '';
     html += '<div class="overlay" id="overlay">';
     html += '  <div class="sheet">';
-    html += '    <div class="sheet-title">اختاري العمليات يلي بدك تصدريها</div>';
+    html += '    <div class="sheet-title">اختر العمليات يلي بدك تصدرها</div>';
     html += '    <div class="sheet-actions" style="margin-bottom:12px;">';
     html += '      <button class="btn btn-ghost" id="selectAllTx">تحديد الكل</button>';
     html += '      <button class="btn btn-ghost" id="deselectAllTx">إلغاء التحديد</button>';
@@ -1357,7 +1359,7 @@
     html += '<div class="overlay" id="overlay">';
     html += '  <div class="sheet">';
     html += '    <div class="sheet-title">تصدير كشف حساب</div>';
-    html += '    <div class="sheet-text">اخترتِ '+state.selectedStatementTxIds.length+' حركة. اختاري الشكل يلي بدك ترسله للزبون.</div>';
+    html += '    <div class="sheet-text">اخترت '+state.selectedStatementTxIds.length+' حركة. اختر الشكل يلي بدك ترسله للزبون.</div>';
     html += '    <div class="settings-row">';
     html += '      <button class="btn btn-accent" id="exportAsImage">تصدير كصورة</button>';
     html += '      <button class="btn btn-ghost" id="exportAsPdf">تصدير كـ PDF</button>';
@@ -1848,7 +1850,9 @@
 
     var logoutBtn = document.getElementById('logoutBtn');
     if(logoutBtn) logoutBtn.addEventListener('click', function(){
-      firebase.auth().signOut();
+      state.modal = null;
+      state.confirm = {message:'متأكد إنك بدك تسجل خروج؟', type:'sign-out'};
+      render();
     });
 
     var saveCustomer = document.getElementById('saveCustomer');
@@ -1926,6 +1930,8 @@
         ensureProfitRates();
         state.modal = null;
         persist();
+      } else if(conf.type === 'sign-out'){
+        firebase.auth().signOut();
       }
       state.confirm = null;
       render();
@@ -1944,36 +1950,91 @@
     provider.setCustomParameters({ prompt: 'select_account' });
     firebase.auth().signInWithPopup(provider).catch(function(e){
       console.error('sign-in popup failed', e);
-      document.getElementById('passError').style.display = 'block';
+      var errEl = document.getElementById('passError');
+      errEl.textContent = 'خطأ: ' + e.code + ' — ' + e.message;
+      errEl.style.display = 'block';
     });
   });
 
+  var currentUid = null;
+  var currentDbRef = null;
+  var currentConnectedRef = null;
+  var currentPresenceRef = null;
+  var currentInstallsRef = null;
+  var currentPresenceSessionRef = null;
+
+  function detachCurrentListeners(){
+    if(currentDbRef) currentDbRef.off();
+    if(currentConnectedRef) currentConnectedRef.off();
+    if(currentPresenceRef) currentPresenceRef.off();
+    if(currentInstallsRef) currentInstallsRef.off();
+    if(currentPresenceSessionRef){
+      try{ currentPresenceSessionRef.onDisconnect().cancel(); }catch(e){}
+      currentPresenceSessionRef.remove();
+    }
+    currentDbRef = null; currentConnectedRef = null; currentPresenceRef = null;
+    currentInstallsRef = null; currentPresenceSessionRef = null;
+  }
+
+  function resetAppState(){
+    state.customers = [];
+    state.transactions = [];
+    state.accountEntries = [];
+    state.dayAssignments = {};
+    ensureDayAssignments();
+    state.profitRates = {};
+    ensureProfitRates();
+    state.pendingSync = false;
+    state.onlineCount = 0;
+    state.installCount = 0;
+    state.loaded = false;
+    state.screen = 'customers-list';
+    state.activeCustomerId = null;
+    state.activeAccount = null;
+    state.activeDay = null;
+    state.search = '';
+    state.modal = null;
+    state.confirm = null;
+    state.drawerOpen = false;
+    navStack.length = 0;
+    render();
+  }
+
   firebase.auth().onAuthStateChanged(function(user){
     if(user){
+      if(currentUid === user.uid){
+        document.getElementById('passGate').style.display = 'none';
+        return; // نفس الحساب، ما تغيّر شي
+      }
+      detachCurrentListeners();
+      resetAppState();
+      currentUid = user.uid;
       dbRef = firebase.database().ref('users/' + user.uid + '/ledger-data');
       LOCAL_KEY = 'ledger-local-cache-v1-' + user.uid;
       document.getElementById('passGate').style.display = 'none';
-      if(!state.loaded){
-        try{ history.replaceState({navMarker:0}, '', location.href); }catch(e){}
-        load();
-        trackPresence();
-        trackInstalls();
-      }
+      try{ history.replaceState({navMarker:0}, '', location.href); }catch(e){}
+      load();
+      trackPresence();
+      trackInstalls();
     } else {
+      currentUid = null;
+      detachCurrentListeners();
+      resetAppState();
       document.getElementById('passGate').style.display = 'flex';
     }
   });
 
   function trackPresence(){
     var uidVal = firebase.auth().currentUser.uid;
-    var sessionRef = firebase.database().ref('users/' + uidVal + '/presence').push();
-    firebase.database().ref('.info/connected').on('value', function(snap){
+    currentPresenceSessionRef = firebase.database().ref('users/' + uidVal + '/presence').push();
+    currentConnectedRef.on('value', function(snap){
       if(snap.val() === true){
-        sessionRef.onDisconnect().remove();
-        sessionRef.set(true);
+        currentPresenceSessionRef.onDisconnect().remove();
+        currentPresenceSessionRef.set(true);
       }
     });
-    firebase.database().ref('users/' + uidVal + '/presence').on('value', function(snap){
+    currentPresenceRef = firebase.database().ref('users/' + uidVal + '/presence');
+    currentPresenceRef.on('value', function(snap){
       state.onlineCount = snap.numChildren();
       render();
     });
@@ -1981,21 +2042,9 @@
 
   function trackInstalls(){
     var uidVal = firebase.auth().currentUser.uid;
-    firebase.database().ref('users/' + uidVal + '/installs').on('value', function(snap){
+    currentInstallsRef = firebase.database().ref('users/' + uidVal + '/installs');
+    currentInstallsRef.on('value', function(snap){
       state.installCount = snap.numChildren();
       render();
     });
     window.addEventListener('appinstalled', function(){
-      firebase.database().ref('users/' + uidVal + '/installs').push(true);
-    });
-  }
-
-  if('serviceWorker' in navigator){
-    window.addEventListener('load', function(){
-      navigator.serviceWorker.register('sw.js').catch(function(e){ console.error('sw register failed', e); });
-    });
-  }
-})();
-</script>
-</body>
-</html>
