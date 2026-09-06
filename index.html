@@ -1935,19 +1935,16 @@
   }
 
   // ---------- المصادقة (تسجيل دخول Google، كل مستخدم بحسابه وبياناته الخاصة) ----------
+  firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(function(e){ console.error('persistence set failed', e); });
+
   var googleSignInBtn = document.getElementById('googleSignInBtn');
   if(googleSignInBtn) googleSignInBtn.addEventListener('click', function(){
     document.getElementById('passError').style.display = 'none';
     var provider = new firebase.auth.GoogleAuthProvider();
-    firebase.auth().signInWithRedirect(provider).catch(function(e){
-      console.error('sign-in redirect failed', e);
+    firebase.auth().signInWithPopup(provider).catch(function(e){
+      console.error('sign-in popup failed', e);
       document.getElementById('passError').style.display = 'block';
     });
-  });
-  firebase.auth().getRedirectResult().catch(function(e){
-    console.error('redirect result error', e);
-    var errEl = document.getElementById('passError');
-    if(errEl){ errEl.style.display = 'block'; }
   });
 
   firebase.auth().onAuthStateChanged(function(user){
